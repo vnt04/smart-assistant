@@ -15,6 +15,9 @@ import { WalletEntity } from "../expense/entities/wallet.entity";
 import { CategoryEntity } from "../expense/entities/category.entity";
 import { TransactionEntity } from "../expense/entities/transaction.entity";
 import { BudgetEntity } from "../expense/entities/budget.entity";
+import { AiConversationEntity } from "../ai/entities/ai-conversation.entity";
+import { AiMessageEntity } from "../ai/entities/ai-message.entity";
+import { AiToolCallEntity } from "../ai/entities/ai-tool-call.entity";
 
 // Loaded by the typeorm CLI; in app runtime ConfigModule handles env.
 loadEnv({ path: ".env.local" });
@@ -48,6 +51,9 @@ const dataSource = new DataSource({
     CategoryEntity,
     TransactionEntity,
     BudgetEntity,
+    AiConversationEntity,
+    AiMessageEntity,
+    AiToolCallEntity,
   ],
   migrations: [
     isCompiled

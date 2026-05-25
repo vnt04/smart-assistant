@@ -13,3 +13,4 @@ export * from "./categories.js";
 export * from "./transactions.js";
 export * from "./budgets.js";
 export * from "./reports.js";
+export * from "./ai.js";

@@ -4,6 +4,8 @@ Web app cá nhân tự host: notes, schedule, expenses, AI assistant. Vietnamese
 
 Full spec: [`docs/SRS.md`](./docs/SRS.md).
 
+Setup guide: [`docs/setup.md`](./docs/setup.md).
+
 ## Stack
 
 | Layer | Tech |
@@ -98,6 +100,6 @@ Per `docs/SRS.md` §9 — checkpoints 0 → 6, ~11 days total.
 - [x] **Checkpoint 1** — Auth (JWT + Google OAuth + AES-256-GCM-encrypted settings)
 - [x] **Checkpoint 2** — Notes (notebooks, tags, attachments, FTS)
 - [x] **Checkpoint 3** — Schedule (events, tasks, calendar + Kanban, BullMQ + Telegram reminders)
-- [ ] Checkpoint 4 — Expense (wallets, categories, transactions, budgets, reports)
-- [ ] Checkpoint 5 — AI (multi-provider, tool calling, streaming chat)
-- [ ] Checkpoint 6 — Production (Dockerfiles, Nginx+HTTPS, backups, deploy README)
+- [x] Checkpoint 4 — Expense (wallets, categories, transactions, budgets, reports)
+- [x] Checkpoint 5 — AI (multi-provider, tool calling, streaming chat)
+- [x] Checkpoint 6 — Production (Dockerfiles, Nginx+HTTPS, backups, deploy README)

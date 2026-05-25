@@ -1,0 +1,128 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=caching_sha2_password
+      - --innodb_ft_min_token_size=1
+      - --ngram_token_size=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    env_file: ${COMPOSE_ENV_FILE:-.env.production}
+    environment:
+      NODE_ENV: production
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+        VITE_APP_NAME: ${VITE_APP_NAME:-Personal Assistant}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    depends_on:
+      - frontend
+      - backend
+
+  certbot:
+    image: certbot/certbot:v2.11.0
+    profiles: ["certbot"]
+    env_file: ${COMPOSE_ENV_FILE:-.env.production}
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+      - ./docker/scripts:/scripts:ro
+
+  backup:
+    image: mysql:8.0
+    profiles: ["backup"]
+    env_file: ${COMPOSE_ENV_FILE:-.env.production}
+    volumes:
+      - ./backups:/backups
+      - ./docker/scripts:/scripts:ro
+      - uploads_data:/uploads:ro
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+    name: assistant_prod_mysql_data
+  redis_data:
+    name: assistant_prod_redis_data
+  uploads_data:
+    name: assistant_prod_uploads_data
+  certbot_www:
+    name: assistant_prod_certbot_www
+  certbot_conf:
+    name: assistant_prod_certbot_conf

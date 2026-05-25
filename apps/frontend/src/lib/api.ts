@@ -1,4 +1,8 @@
 import {
+  aiConversationDetailSchema,
+  aiConversationSchema,
+  aiStreamEventSchema,
+  aiToolCallSchema,
   attachmentSchema,
   authTokensSchema,
   budgetSchema,
@@ -20,11 +24,17 @@ import {
   userProfileSchema,
   userSettingsSchema,
   walletSchema,
+  type AiConversation,
+  type AiConversationDetail,
+  type AiStreamEvent,
+  type AiToolCall,
   type Attachment,
   type AuthTokens,
   type Budget,
   type BudgetStatus,
   type Category,
+  type ConfirmAiToolCallInput,
+  type CreateAiConversationInput,
   type CreateBudgetInput,
   type CreateCategoryInput,
   type CreateEventInput,
@@ -48,6 +58,7 @@ import {
   type Notebook,
   type RegisterInput,
   type Reminder,
+  type SendAiMessageInput,
   type Tag,
   type Task,
   type TaskListQuery,
@@ -472,6 +483,69 @@ export const api = {
 
   deleteBudget: async (id: string): Promise<void> =>
     request(`/budgets/${id}`, { method: "DELETE" }),
+
+  // AI
+  listAiConversations: async (): Promise<AiConversation[]> =>
+    z.array(aiConversationSchema).parse(await request("/ai/conversations")),
+
+  createAiConversation: async (
+    input: CreateAiConversationInput = {},
+  ): Promise<AiConversationDetail> =>
+    aiConversationDetailSchema.parse(
+      await request("/ai/conversations", { method: "POST", body: input }),
+    ),
+
+  getAiConversation: async (id: string): Promise<AiConversationDetail> =>
+    aiConversationDetailSchema.parse(await request(`/ai/conversations/${id}`)),
+
+  sendAiMessage: async (
+    conversationId: string,
+    input: SendAiMessageInput,
+    onEvent: (event: AiStreamEvent) => void,
+  ): Promise<void> => {
+    const tokens = tokenStorage.load();
+    const headers = new Headers({
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    });
+    if (tokens?.accessToken) {
+      headers.set("Authorization", `Bearer ${tokens.accessToken}`);
+    }
+    const res = await fetch(`${API_BASE}/ai/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(input),
+    });
+    if (!res.ok || !res.body) {
+      throw new ApiError(res.status, "ai_stream_failed", "Không gửi được tin nhắn");
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+      for (const chunk of chunks) {
+        const data = chunk
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("\n");
+        if (data) onEvent(aiStreamEventSchema.parse(JSON.parse(data)));
+      }
+    }
+  },
+
+  confirmAiToolCall: async (
+    id: string,
+    input: ConfirmAiToolCallInput,
+  ): Promise<AiToolCall> =>
+    aiToolCallSchema.parse(
+      await request(`/ai/tool-calls/${id}`, { method: "PATCH", body: input }),
+    ),
 
   // Reports
   expenseByCategory: async (

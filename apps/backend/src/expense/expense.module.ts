@@ -45,6 +45,7 @@ import { WalletsService } from "./wallets.service";
     CategoriesService,
     TransactionsService,
     BudgetsService,
+    ReportsService,
   ],
 })
 export class ExpenseModule {}

@@ -9,6 +9,8 @@ import {
 import { useEffect } from "react";
 import { Button } from "./components/ui/button";
 import { useAuth } from "./features/auth/AuthContext";
+import { AssistantPage } from "./pages/AssistantPage";
+import { ExpensePage } from "./pages/ExpensePage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotesPage } from "./pages/NotesPage";
@@ -53,6 +55,18 @@ function RootLayout() {
                   className="rounded px-3 py-1.5 hover:bg-accent"
                 >
                   Lịch
+                </Link>
+                <Link
+                  to="/expense"
+                  className="rounded px-3 py-1.5 hover:bg-accent"
+                >
+                  Chi tiêu
+                </Link>
+                <Link
+                  to="/assistant"
+                  className="rounded px-3 py-1.5 hover:bg-accent"
+                >
+                  Trợ lý
                 </Link>
                 <Link
                   to="/settings"
@@ -129,6 +143,18 @@ const scheduleRoute = new Route({
   component: SchedulePage,
 });
 
+const expenseRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/expense",
+  component: ExpensePage,
+});
+
+const assistantRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/assistant",
+  component: AssistantPage,
+});
+
 const settingsRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -147,6 +173,8 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   notesRoute,
   scheduleRoute,
+  expenseRoute,
+  assistantRoute,
   settingsRoute,
   googleCallbackRoute,
 ]);

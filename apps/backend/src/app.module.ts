@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { validateEnv } from "./config/env.validation";
+import { AiModule } from "./ai/ai.module";
 import { AuthModule } from "./auth/auth.module";
 import { CryptoModule } from "./common/crypto/crypto.module";
 import { DatabaseModule } from "./database/database.module";
@@ -51,6 +52,7 @@ import { UsersModule } from "./users/users.module";
     NotesModule,
     ScheduleModule,
     ExpenseModule,
+    AiModule,
     HealthModule,
   ],
 })
