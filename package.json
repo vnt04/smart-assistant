@@ -1,0 +1,28 @@
+{
+  "name": "assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal Assistant — notes, schedule, expenses, AI",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter @assistant/shared build && pnpm -r --filter @assistant/backend build && pnpm -r --filter @assistant/frontend build",
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" --filter @assistant/shared dev",
+    "dev:backend": "pnpm --filter @assistant/backend dev",
+    "dev:frontend": "pnpm --filter @assistant/frontend dev",
+    "dev:shared": "pnpm --filter @assistant/shared dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "clean": "pnpm -r exec rm -rf dist .turbo tsconfig.tsbuildinfo node_modules/.cache"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

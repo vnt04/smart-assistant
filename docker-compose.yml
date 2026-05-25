@@ -1,0 +1,60 @@
+# Dev stack: MySQL 8 + Redis 7. App processes run on host (pnpm dev).
+# Prod stack lives in docker-compose.prod.yml (Checkpoint 6).
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: assistant-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=caching_sha2_password
+      - --innodb_ft_min_token_size=1
+      - --ngram_token_size=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_pw}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-assistant}
+      MYSQL_USER: ${MYSQL_USER:-assistant}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-assistant_dev_pw}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD
+        - mysqladmin
+        - ping
+        - -h
+        - localhost
+        - -u
+        - root
+        - -p${MYSQL_ROOT_PASSWORD:-root_dev_pw}
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: assistant-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mysql_data:
+    name: assistant_mysql_data
+  redis_data:
+    name: assistant_redis_data

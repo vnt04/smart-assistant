@@ -1,0 +1,40 @@
+{
+  "name": "@assistant/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal Assistant — React + Vite PWA",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@assistant/shared": "workspace:*",
+    "@tanstack/react-query": "5.59.16",
+    "@tanstack/react-router": "1.78.3",
+    "clsx": "2.1.1",
+    "lucide-react": "0.453.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwind-merge": "2.5.4",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.11",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.3",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.47",
+    "tailwindcss": "3.4.14",
+    "typescript": "5.5.4",
+    "vite": "5.4.10",
+    "vite-plugin-pwa": "0.20.5",
+    "vitest": "2.1.4"
+  }
+}
