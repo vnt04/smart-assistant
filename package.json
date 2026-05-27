@@ -26,7 +26,6 @@
     "prod:logs": "docker compose --env-file .env.production -f docker-compose.prod.yml logs -f",
     "prod:migrate": "docker compose --env-file .env.production -f docker-compose.prod.yml exec backend npm --prefix /app run migration:run",
     "prod:backup": "docker compose --env-file .env.production -f docker-compose.prod.yml --profile backup run --rm backup",
-    "prod:certbot:init": "docker compose --env-file .env.production -f docker-compose.prod.yml --profile certbot run --rm --entrypoint \"/bin/sh /scripts/certbot-init.sh\" certbot",
     "clean": "pnpm -r exec rm -rf dist .turbo tsconfig.tsbuildinfo node_modules/.cache"
   },
   "devDependencies": {

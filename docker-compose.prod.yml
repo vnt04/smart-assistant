@@ -49,6 +49,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       UPLOAD_DIR: /data/uploads
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3001}:3000"
     volumes:
       - uploads_data:/data/uploads
     depends_on:
@@ -71,36 +73,11 @@ services:
         VITE_API_BASE_URL: /api
         VITE_APP_NAME: ${VITE_APP_NAME:-Personal Assistant}
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-8081}:80"
     depends_on:
       backend:
         condition: service_healthy
-
-  nginx:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN}
-    volumes:
-      - ./docker/nginx/templates:/etc/nginx/templates:ro
-      - certbot_www:/var/www/certbot
-      - certbot_conf:/etc/letsencrypt
-    depends_on:
-      - frontend
-      - backend
-
-  certbot:
-    image: certbot/certbot:v2.11.0
-    profiles: ["certbot"]
-    env_file: ${COMPOSE_ENV_FILE:-.env.production}
-    ports:
-      - "80:80"
-    volumes:
-      - certbot_www:/var/www/certbot
-      - certbot_conf:/etc/letsencrypt
-      - ./docker/scripts:/scripts:ro
 
   backup:
     image: mysql:8.0
@@ -122,7 +99,3 @@ volumes:
     name: assistant_prod_redis_data
   uploads_data:
     name: assistant_prod_uploads_data
-  certbot_www:
-    name: assistant_prod_certbot_www
-  certbot_conf:
-    name: assistant_prod_certbot_conf

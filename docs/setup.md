@@ -104,23 +104,60 @@ Không commit `.env.production`.
 pnpm prod:build
 ```
 
-### 3.4. Khởi động lần đầu để lấy chứng chỉ HTTPS
+### 3.4. Khởi động stack sau nginx host
 
-Template Nginx production cần certificate tồn tại trước khi Nginx HTTPS chạy được. Quy trình lần đầu:
+Production stack không bind public port 80/443. Frontend và backend chỉ mở port trên localhost để nginx host reverse proxy:
 
-1. Đảm bảo port 80 chưa bị process nào chiếm, sau đó tạo certificate bằng Certbot standalone:
+- Frontend: `127.0.0.1:${FRONTEND_HOST_PORT:-8081}`
+- Backend: `127.0.0.1:${BACKEND_HOST_PORT:-3001}`
 
-```bash
-pnpm prod:certbot:init
-```
-
-2. Khởi động toàn bộ stack gồm Nginx HTTPS:
+Khởi động stack:
 
 ```bash
 pnpm prod:up
 ```
 
-3. Kiểm tra health:
+Tạo nginx server block trên host cho `APP_DOMAIN`:
+
+```nginx
+server {
+  listen 80;
+  server_name assistant.example.com;
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:3001/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+Kiểm tra và reload nginx host:
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+Cấp HTTPS bằng certbot nginx plugin trên host:
+
+```bash
+certbot --nginx -d <APP_DOMAIN>
+```
+
+Kiểm tra health:
 
 ```bash
 curl https://<APP_DOMAIN>/api/health
@@ -148,11 +185,11 @@ Dừng stack, giữ volumes:
 pnpm prod:down
 ```
 
-Gia hạn certificate:
+Gia hạn certificate bằng certbot trên host:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml --profile certbot run --rm certbot renew --webroot -w /var/www/certbot
-pnpm prod:up
+certbot renew
+systemctl reload nginx
 ```
 
 Nên đặt cron trên server chạy lệnh renew hằng ngày hoặc hằng tuần.
@@ -178,7 +215,7 @@ Backup được ghi vào `./backups/YYYYMMDDTHHMMSSZ/` gồm:
 Dừng backend/frontend trước khi restore để tránh ghi dữ liệu trong lúc khôi phục:
 
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml stop backend frontend nginx
+docker compose --env-file .env.production -f docker-compose.prod.yml stop backend frontend
 ```
 
 Restore từ một thư mục backup:
