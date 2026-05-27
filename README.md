@@ -2,6 +2,8 @@
 
 Web app cá nhân tự host: notes, schedule, expenses, AI assistant. Vietnamese-only, VND-only, mobile-first PWA.
 
+Docs index: [`docs/README.md`](./docs/README.md).
+
 Full spec: [`docs/SRS.md`](./docs/SRS.md).
 
 Setup guide: [`docs/setup.md`](./docs/setup.md).
