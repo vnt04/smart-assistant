@@ -9,19 +9,38 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
-  type FormEvent,
   type KeyboardEvent,
 } from "react";
 import type {
   Note,
-  NoteListResponse,
   NoteSummary,
   Notebook,
   Tag,
 } from "@assistant/shared";
+import {
+  ArrowLeft,
+  ChevronDown,
+  Filter,
+  Paperclip,
+  Pin,
+  PinOff,
+  Plus,
+  Search,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { NoteEditor } from "../components/editor/note-editor";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 
@@ -44,6 +63,7 @@ export function NotesPage() {
   const [filter, setFilter] = useState<NotesFilter>(DEFAULT_FILTER);
   const [debouncedQ, setDebouncedQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "editor">("list");
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQ(filter.q.trim()), 300);
@@ -113,6 +133,7 @@ export function NotesPage() {
       invalidateLists();
       void qc.invalidateQueries({ queryKey: ["tags"] });
       setSelectedId(note.id);
+      setMobileView("editor");
     },
   });
 
@@ -128,56 +149,50 @@ export function NotesPage() {
     });
   };
 
+  const pinned = items.filter((n) => n.isPinned);
+  const recent = items.filter((n) => !n.isPinned);
+
   return (
-    <section className="mx-auto grid h-[calc(100vh-3.5rem)] max-w-7xl grid-cols-1 gap-0 px-0 md:grid-cols-[240px_320px_1fr]">
-      <aside className="border-r bg-muted/20 p-4 md:block">
-        <Sidebar
+    <section className="flex h-full min-h-0 overflow-hidden">
+      <aside
+        className={cn(
+          "flex w-full flex-col border-r border-border bg-card md:w-[340px] md:shrink-0",
+          mobileView === "editor" && "hidden md:flex",
+        )}
+      >
+        <ListHeader
+          filter={filter}
           notebooks={notebooksQuery.data ?? []}
           tags={tagsQuery.data ?? []}
-          filter={filter}
-          onChange={(next) => setFilter(next)}
-          onNotebookCreated={() => {
-            void qc.invalidateQueries({ queryKey: ["notebooks"] });
+          onChange={setFilter}
+          onCreate={() => void handleCreate()}
+          creating={createNote.isPending}
+        />
+        <NoteList
+          isLoading={notesQuery.isLoading}
+          pinned={pinned}
+          recent={recent}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setMobileView("editor");
           }}
-          onTagDeleted={() => {
-            void qc.invalidateQueries({ queryKey: ["tags"] });
-            invalidateLists();
-          }}
+          notebooks={notebooksQuery.data ?? []}
         />
       </aside>
 
-      <div className="flex flex-col border-r">
-        <div className="flex items-center gap-2 border-b p-3">
-          <Input
-            placeholder="Tìm trong notes…"
-            value={filter.q}
-            onChange={(e) =>
-              setFilter((f) => ({ ...f, q: e.target.value }))
-            }
-          />
-          <Button
-            size="sm"
-            onClick={() => void handleCreate()}
-            disabled={createNote.isPending}
-            title="Tạo ghi chú mới"
-          >
-            +
-          </Button>
-        </div>
-        <NoteList
-          query={notesQuery.data}
-          isLoading={notesQuery.isLoading}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-      </div>
-
-      <main className="flex flex-col overflow-hidden">
+      <main
+        className={cn(
+          "flex min-w-0 flex-1 flex-col bg-background",
+          mobileView === "list" && "hidden md:flex",
+        )}
+      >
         {selectedId && selectedQuery.data ? (
-          <NoteEditor
+          <NoteWorkspace
             key={selectedId}
             note={selectedQuery.data}
             notebooks={notebooksQuery.data ?? []}
+            onBack={() => setMobileView("list")}
             onSaved={(note) => {
               qc.setQueryData(["note", note.id], note);
               invalidateLists();
@@ -185,504 +200,770 @@ export function NotesPage() {
             }}
             onDeleted={() => {
               setSelectedId(null);
+              setMobileView("list");
               invalidateLists();
             }}
           />
         ) : (
-          <div className="m-auto text-sm text-muted-foreground">
-            Chọn một ghi chú hoặc nhấn <kbd>+</kbd> để tạo mới
-          </div>
+          <EmptyState onCreate={() => void handleCreate()} />
         )}
       </main>
     </section>
   );
 }
 
-interface SidebarProps {
+/* -------------------- List header -------------------- */
+
+interface ListHeaderProps {
+  filter: NotesFilter;
   notebooks: Notebook[];
   tags: Tag[];
-  filter: NotesFilter;
   onChange: (next: NotesFilter) => void;
-  onNotebookCreated: () => void;
-  onTagDeleted: () => void;
+  onCreate: () => void;
+  creating: boolean;
 }
 
-function Sidebar({
+function ListHeader({
+  filter,
   notebooks,
   tags,
-  filter,
   onChange,
-  onNotebookCreated,
-  onTagDeleted,
-}: SidebarProps) {
-  const [newName, setNewName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const createNotebook = useMutation({
-    mutationFn: api.createNotebook,
-    onSuccess: () => {
-      setNewName("");
-      setError(null);
-      onNotebookCreated();
-    },
-    onError: (err: unknown) => {
-      setError(err instanceof ApiError ? err.message : "Lỗi tạo notebook");
-    },
-  });
-
-  const deleteTag = useMutation({
-    mutationFn: api.deleteTag,
-    onSuccess: () => onTagDeleted(),
-  });
-
-  const onSubmit = (e: FormEvent): void => {
-    e.preventDefault();
-    const name = newName.trim();
-    if (!name) return;
-    createNotebook.mutate({ name });
-  };
+  onCreate,
+  creating,
+}: ListHeaderProps) {
+  const qc = useQueryClient();
+  const activeNotebook = useMemo(() => {
+    if (filter.notebookId === "all") return null;
+    if (filter.notebookId === "none")
+      return { id: "none", name: "Chưa phân loại" };
+    return notebooks.find((n) => n.id === filter.notebookId) ?? null;
+  }, [filter.notebookId, notebooks]);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <div>
-        <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-          Notebooks
-        </div>
-        <ul className="space-y-0.5 text-sm">
-          <SidebarRow
-            label="Tất cả"
-            active={filter.notebookId === "all" && !filter.tag}
-            onClick={() => onChange({ ...filter, notebookId: "all", tag: null })}
-          />
-          <SidebarRow
-            label="Chưa phân loại"
-            active={filter.notebookId === "none"}
-            onClick={() =>
-              onChange({ ...filter, notebookId: "none", tag: null })
-            }
-          />
-          {notebooks.map((nb) => (
-            <SidebarRow
-              key={nb.id}
-              label={nb.name}
-              color={nb.color ?? undefined}
-              active={filter.notebookId === nb.id}
-              onClick={() =>
-                onChange({ ...filter, notebookId: nb.id, tag: null })
-              }
-            />
-          ))}
-        </ul>
-        <form onSubmit={onSubmit} className="mt-2 flex gap-1">
-          <Input
-            placeholder="Notebook mới"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className="h-8 text-xs"
-          />
-          <Button
-            size="sm"
-            type="submit"
-            disabled={createNotebook.isPending || !newName.trim()}
-          >
-            +
-          </Button>
-        </form>
-        {error && (
-          <p role="alert" className="mt-1 text-xs text-destructive">
-            {error}
+    <header className="border-b border-border bg-card">
+      <div className="flex items-center gap-2 px-3 py-3">
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold leading-tight">Notes</h1>
+          <p className="truncate text-2xs text-muted-foreground">
+            {activeNotebook ? activeNotebook.name : "Tất cả"}
+            {filter.tag ? ` · #${filter.tag}` : ""}
           </p>
+        </div>
+        <div className="ml-auto flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Lọc"
+                aria-label="Lọc"
+              >
+                <Filter className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuLabel>Notebook</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={() =>
+                  onChange({ ...filter, notebookId: "all", tag: null })
+                }
+              >
+                Tất cả
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  onChange({ ...filter, notebookId: "none", tag: null })
+                }
+              >
+                Chưa phân loại
+              </DropdownMenuItem>
+              {notebooks.map((nb) => (
+                <DropdownMenuItem
+                  key={nb.id}
+                  onSelect={() =>
+                    onChange({ ...filter, notebookId: nb.id, tag: null })
+                  }
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      background:
+                        nb.color ?? "hsl(var(--muted-foreground))",
+                    }}
+                  />
+                  {nb.name}
+                </DropdownMenuItem>
+              ))}
+              <NotebookCreator />
+              {tags.length > 0 && <DropdownMenuSeparator />}
+              {tags.length > 0 && <DropdownMenuLabel>Tags</DropdownMenuLabel>}
+              {tags.map((tag) => (
+                <DropdownMenuItem
+                  key={tag.id}
+                  onSelect={() => onChange({ ...filter, tag: tag.name })}
+                >
+                  <span className="text-muted-foreground">#</span>
+                  {tag.name}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void api
+                        .deleteTag(tag.id)
+                        .then(() =>
+                          qc.invalidateQueries({ queryKey: ["tags"] }),
+                        );
+                    }}
+                    className="ml-auto text-muted-foreground hover:text-destructive"
+                    aria-label="Xóa tag"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button
+            type="button"
+            onClick={onCreate}
+            disabled={creating}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-soft transition hover:brightness-110 disabled:opacity-60"
+            title="Tạo ghi chú"
+            aria-label="Tạo ghi chú"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="relative px-3 pb-3">
+        <Search className="pointer-events-none absolute left-5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Tìm trong ghi chú…"
+          value={filter.q}
+          onChange={(e) => onChange({ ...filter, q: e.target.value })}
+          className="h-9 pl-8"
+        />
+        {filter.q && (
+          <button
+            type="button"
+            onClick={() => onChange({ ...filter, q: "" })}
+            className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            aria-label="Xóa"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
-      <div>
-        <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-          Tags
-        </div>
-        <ul className="space-y-0.5 text-sm">
-          {tags.length === 0 && (
-            <li className="text-xs text-muted-foreground">
-              Chưa có tag nào
-            </li>
-          )}
-          {tags.map((t) => (
-            <li
-              key={t.id}
-              className={cn(
-                "group flex items-center justify-between rounded px-2 py-1 hover:bg-accent",
-                filter.tag === t.name && "bg-accent font-medium",
-              )}
+      {(filter.notebookId !== "all" || filter.tag) && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2">
+          {filter.notebookId !== "all" && (
+            <Chip
+              onClear={() => onChange({ ...filter, notebookId: "all" })}
             >
-              <button
-                type="button"
-                className="flex-1 truncate text-left"
-                onClick={() =>
-                  onChange({
-                    ...filter,
-                    tag: filter.tag === t.name ? null : t.name,
-                  })
-                }
-              >
-                #{t.name}
-              </button>
-              <button
-                type="button"
-                className="invisible text-xs text-muted-foreground group-hover:visible"
-                onClick={() => {
-                  if (confirm(`Xoá tag "${t.name}"?`)) deleteTag.mutate(t.id);
-                }}
-                aria-label={`Xoá tag ${t.name}`}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+              {activeNotebook?.name ?? "—"}
+            </Chip>
+          )}
+          {filter.tag && (
+            <Chip onClear={() => onChange({ ...filter, tag: null })}>
+              #{filter.tag}
+            </Chip>
+          )}
+        </div>
+      )}
+    </header>
+  );
+}
+
+function NotebookCreator() {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [open, setOpen] = useState(false);
+  const create = useMutation({
+    mutationFn: api.createNotebook,
+    onSuccess: () => {
+      setName("");
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: ["notebooks"] });
+    },
+  });
+
+  if (!open) {
+    return (
+      <DropdownMenuItem
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen(true);
+        }}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        <span className="text-muted-foreground">Notebook mới</span>
+      </DropdownMenuItem>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = name.trim();
+        if (n) create.mutate({ name: n });
+      }}
+      className="flex items-center gap-1 px-2 py-1.5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Tên notebook"
+        className="h-8 text-xs"
+      />
+      <Button size="sm" type="submit" disabled={create.isPending}>
+        Tạo
+      </Button>
+    </form>
+  );
+}
+
+function Chip({
+  children,
+  onClear,
+}: {
+  children: React.ReactNode;
+  onClear: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">
+      {children}
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-accent-foreground/70 hover:text-accent-foreground"
+        aria-label="Xóa lọc"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
+  );
+}
+
+/* -------------------- Note list -------------------- */
+
+interface NoteListProps {
+  pinned: NoteSummary[];
+  recent: NoteSummary[];
+  isLoading: boolean;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  notebooks: Notebook[];
+}
+
+function NoteList({
+  pinned,
+  recent,
+  isLoading,
+  selectedId,
+  onSelect,
+  notebooks,
+}: NoteListProps) {
+  if (isLoading) {
+    return (
+      <ul className="flex-1 space-y-2 p-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <li
+            key={i}
+            className="h-20 animate-pulse rounded-lg bg-muted/60"
+          />
+        ))}
+      </ul>
+    );
+  }
+  if (pinned.length === 0 && recent.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        Chưa có ghi chú. Nhấn <Plus className="inline h-3.5 w-3.5" /> để tạo.
       </div>
+    );
+  }
+
+  const notebookById = new Map(notebooks.map((n) => [n.id, n]));
+
+  return (
+    <div className="flex-1 overflow-y-auto scrollbar-thin">
+      {pinned.length > 0 && (
+        <Section label="Đã ghim">
+          {pinned.map((n) => (
+            <NoteCard
+              key={n.id}
+              note={n}
+              notebook={n.notebookId ? notebookById.get(n.notebookId) : null}
+              active={n.id === selectedId}
+              onClick={() => onSelect(n.id)}
+            />
+          ))}
+        </Section>
+      )}
+      {recent.length > 0 && (
+        <Section label="Gần đây">
+          {recent.map((n) => (
+            <NoteCard
+              key={n.id}
+              note={n}
+              notebook={n.notebookId ? notebookById.get(n.notebookId) : null}
+              active={n.id === selectedId}
+              onClick={() => onSelect(n.id)}
+            />
+          ))}
+        </Section>
+      )}
     </div>
   );
 }
 
-interface SidebarRowProps {
+function Section({
+  label,
+  children,
+}: {
   label: string;
-  active: boolean;
-  color?: string;
-  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-b border-border last:border-0">
+      <header className="sticky top-0 z-[1] flex items-center justify-between bg-card/95 px-3 py-1.5 backdrop-blur">
+        <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {label}
+        </span>
+      </header>
+      <ul>{children}</ul>
+    </section>
+  );
 }
 
-function SidebarRow({ label, active, color, onClick }: SidebarRowProps) {
+function NoteCard({
+  note,
+  notebook,
+  active,
+  onClick,
+}: {
+  note: NoteSummary;
+  notebook?: Notebook | null;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const title = note.title || "Chưa có tiêu đề";
+  const preview = (note.excerpt ?? "").slice(0, 120);
   return (
     <li>
       <button
         type="button"
         onClick={onClick}
         className={cn(
-          "flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-accent",
-          active && "bg-accent font-medium",
+          "block w-full border-l-2 px-3 py-2.5 text-left transition-colors",
+          active
+            ? "border-l-primary bg-accent/60"
+            : "border-l-transparent hover:bg-muted/60",
         )}
       >
-        <span
-          aria-hidden
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{
-            background: color ?? "transparent",
-            border: color ? "0" : "1px solid currentColor",
-          }}
-        />
-        <span className="truncate">{label}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            {note.isPinned && (
+              <Pin
+                className="h-3 w-3 shrink-0 text-dot-orange"
+                aria-hidden
+              />
+            )}
+            <h3 className="truncate text-sm font-medium leading-snug">
+              {title}
+            </h3>
+          </div>
+          {preview && (
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+              {preview}
+            </p>
+          )}
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-2xs text-muted-foreground">
+            <time dateTime={note.updatedAt}>
+              {formatRelative(note.updatedAt)}
+            </time>
+            {notebook && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      background:
+                        notebook.color ?? "hsl(var(--muted-foreground))",
+                    }}
+                  />
+                  {notebook.name}
+                </span>
+              </>
+            )}
+            {note.tags.slice(0, 2).map((tag) => (
+              <span
+                key={tag.id}
+                className="rounded-full bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground"
+              >
+                #{tag.name}
+              </span>
+            ))}
+          </div>
+        </div>
       </button>
     </li>
   );
 }
 
-interface NoteListProps {
-  query: NoteListResponse | undefined;
-  isLoading: boolean;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}
+/* -------------------- Editor workspace -------------------- */
 
-function NoteList({ query, isLoading, selectedId, onSelect }: NoteListProps) {
-  if (isLoading) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">Đang tải…</div>
-    );
-  }
-  const items = query?.items ?? [];
-  if (items.length === 0) {
-    return (
-      <div className="p-4 text-sm text-muted-foreground">
-        Không có ghi chú nào
-      </div>
-    );
-  }
-  return (
-    <ul className="flex-1 divide-y overflow-y-auto">
-      {items.map((n) => (
-        <li key={n.id}>
-          <button
-            type="button"
-            onClick={() => onSelect(n.id)}
-            className={cn(
-              "block w-full px-3 py-2 text-left hover:bg-accent",
-              selectedId === n.id && "bg-accent",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              {n.isPinned && (
-                <span aria-label="pinned" title="Pinned">
-                  📌
-                </span>
-              )}
-              <span className="truncate font-medium">{n.title}</span>
-            </div>
-            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-              {n.excerpt || "(trống)"}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-              <time>{formatDate(n.updatedAt)}</time>
-              {n.tags.map((t) => (
-                <span
-                  key={t.id}
-                  className="rounded-full bg-muted px-1.5 py-0.5"
-                >
-                  #{t.name}
-                </span>
-              ))}
-            </div>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-interface NoteEditorProps {
+interface NoteWorkspaceProps {
   note: Note;
   notebooks: Notebook[];
   onSaved: (note: Note) => void;
   onDeleted: () => void;
+  onBack: () => void;
 }
 
-function NoteEditor({ note, notebooks, onSaved, onDeleted }: NoteEditorProps) {
+function NoteWorkspace({
+  note,
+  notebooks,
+  onSaved,
+  onDeleted,
+  onBack,
+}: NoteWorkspaceProps) {
+  const qc = useQueryClient();
   const [title, setTitle] = useState(note.title);
+  const [contentHtml, setContentHtml] = useState(note.contentHtml ?? "");
+  const [tagInput, setTagInput] = useState("");
+  const [tags, setTags] = useState<string[]>(note.tags.map((t) => t.name));
   const [notebookId, setNotebookId] = useState<string | null>(note.notebookId);
   const [isPinned, setIsPinned] = useState(note.isPinned);
-  const [tagsInput, setTagsInput] = useState(
-    note.tags.map((t) => t.name).join(", "),
-  );
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const [contentHtml, setContentHtml] = useState(note.contentHtml);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTitle(note.title);
+    setContentHtml(note.contentHtml ?? "");
+    setTags(note.tags.map((t) => t.name));
     setNotebookId(note.notebookId);
     setIsPinned(note.isPinned);
-    setTagsInput(note.tags.map((t) => t.name).join(", "));
-    setContentHtml(note.contentHtml);
-    if (editorRef.current) {
-      editorRef.current.innerHTML = note.contentHtml;
-    }
-  }, [
-    note.id,
-    note.title,
-    note.notebookId,
-    note.isPinned,
-    note.contentHtml,
-    note.tags,
-  ]);
+  }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const save = useMutation({
-    mutationFn: () =>
-      api.updateNote(note.id, {
-        title: title.trim() || "Không tiêu đề",
-        contentHtml,
-        notebookId,
-        isPinned,
-        tags: parseTags(tagsInput),
-      }),
+  const update = useMutation({
+    mutationFn: (payload: {
+      title: string;
+      contentHtml: string;
+      notebookId: string | null;
+      tags: string[];
+      isPinned: boolean;
+    }) => api.updateNote(note.id, payload),
     onSuccess: (saved) => {
+      setSavedAt(new Date());
       setError(null);
       onSaved(saved);
     },
-    onError: (err: unknown) => {
-      setError(err instanceof ApiError ? err.message : "Lưu thất bại");
+    onError: (e: unknown) => {
+      setError(e instanceof ApiError ? e.message : "Lỗi lưu ghi chú");
     },
   });
 
   const remove = useMutation({
     mutationFn: () => api.deleteNote(note.id),
-    onSuccess: onDeleted,
+    onSuccess: () => onDeleted(),
   });
 
-  const uploadAttachment = useMutation({
+  const upload = useMutation({
     mutationFn: (file: File) => api.uploadAttachment(note.id, file),
-    onSuccess: (a) => {
-      onSaved({ ...note, attachments: [...note.attachments, a] });
-    },
-    onError: (err: unknown) => {
-      setError(err instanceof ApiError ? err.message : "Upload thất bại");
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["note", note.id] });
     },
   });
 
-  const deleteAttachment = useMutation({
+  const removeAttachment = useMutation({
     mutationFn: (id: string) => api.deleteAttachment(id),
-    onSuccess: (_, id) => {
-      onSaved({
-        ...note,
-        attachments: note.attachments.filter((a) => a.id !== id),
-      });
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["note", note.id] });
     },
   });
 
-  const onEditorKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+  const save = () =>
+    update.mutate({
+      title: title.trim() || "Chưa có tiêu đề",
+      contentHtml,
+      notebookId,
+      tags,
+      isPinned,
+    });
+
+  const addTag = (raw: string) => {
+    const t = raw.trim().replace(/^#/, "").toLowerCase();
+    if (!t || tags.includes(t)) return;
+    setTags([...tags, t]);
+    setTagInput("");
+  };
+
+  const onTagKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      save.mutate();
+      addTag(tagInput);
+    } else if (e.key === "Backspace" && !tagInput && tags.length) {
+      setTags(tags.slice(0, -1));
     }
   };
 
-  const onFileSelected = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    if (file) uploadAttachment.mutate(file);
-    e.target.value = "";
-  };
+  const dirty =
+    title !== note.title ||
+    contentHtml !== (note.contentHtml ?? "") ||
+    tags.join() !== note.tags.map((t) => t.name).join() ||
+    notebookId !== note.notebookId ||
+    isPinned !== note.isPinned;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const timer = setTimeout(() => {
+      update.mutate({
+        title: title.trim() || "Chưa có tiêu đề",
+        contentHtml,
+        notebookId,
+        tags,
+        isPinned,
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, contentHtml, tags, notebookId, isPinned, dirty]);
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b p-3">
-        <Input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => save.mutate()}
-          className="min-w-[12rem] flex-1 text-base font-semibold"
-          placeholder="Tiêu đề ghi chú"
-        />
-        <select
-          value={notebookId ?? ""}
-          onChange={(e) => setNotebookId(e.target.value || null)}
-          className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-2 md:px-6">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted md:hidden"
+          aria-label="Quay lại"
         >
-          <option value="">(Không notebook)</option>
-          {notebooks.map((nb) => (
-            <option key={nb.id} value={nb.id}>
-              {nb.name}
-            </option>
-          ))}
-        </select>
-        <label className="flex items-center gap-1 text-sm">
-          <input
-            type="checkbox"
-            checked={isPinned}
-            onChange={(e) => setIsPinned(e.target.checked)}
-          />
-          Pin
-        </label>
-        <Button
-          size="sm"
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-        >
-          {save.isPending ? "Đang lưu…" : "Lưu"}
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => {
-            if (confirm("Xoá ghi chú này?")) remove.mutate();
-          }}
-        >
-          Xoá
-        </Button>
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{
+                  background:
+                    notebooks.find((n) => n.id === notebookId)?.color ??
+                    "hsl(var(--muted-foreground))",
+                }}
+              />
+              {notebooks.find((n) => n.id === notebookId)?.name ??
+                "Chưa phân loại"}
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => setNotebookId(null)}>
+              Chưa phân loại
+            </DropdownMenuItem>
+            {notebooks.map((nb) => (
+              <DropdownMenuItem
+                key={nb.id}
+                onSelect={() => setNotebookId(nb.id)}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    background: nb.color ?? "hsl(var(--muted-foreground))",
+                  }}
+                />
+                {nb.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="ml-auto flex items-center gap-1">
+          <span className="text-2xs text-muted-foreground">
+            {update.isPending
+              ? "Đang lưu…"
+              : dirty
+                ? "Đang chờ lưu…"
+                : savedAt
+                  ? `Đã lưu ${formatRelative(savedAt.toISOString())}`
+                  : "Đã lưu"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsPinned((p) => !p)}
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted",
+              isPinned ? "text-dot-orange" : "text-muted-foreground",
+            )}
+            title={isPinned ? "Bỏ ghim" : "Ghim"}
+            aria-label={isPinned ? "Bỏ ghim" : "Ghim"}
+          >
+            {isPinned ? (
+              <Pin className="h-4 w-4" />
+            ) : (
+              <PinOff className="h-4 w-4" />
+            )}
+          </button>
+          <label
+            className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Đính kèm"
+          >
+            <Paperclip className="h-4 w-4" />
+            <input
+              type="file"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) upload.mutate(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Xóa ghi chú này?")) remove.mutate();
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title="Xóa"
+            aria-label="Xóa"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
-      <div className="border-b px-3 py-2">
-        <Input
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-          onBlur={() => save.mutate()}
-          placeholder="Tags (phân cách bằng dấu phẩy)"
-          className="h-8 text-xs"
+      <div className="border-b border-border px-4 pb-3 pt-4 md:px-8 md:pt-6">
+        <input
+          ref={titleRef}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Tiêu đề ghi chú"
+          className="w-full bg-transparent text-3xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60"
         />
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => setTags(tags.filter((t) => t !== tag))}
+              className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground hover:bg-accent/80"
+            >
+              <span>#{tag}</span>
+              <X className="h-3 w-3" />
+            </button>
+          ))}
+          <input
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={onTagKey}
+            onBlur={() => addTag(tagInput)}
+            placeholder="Thêm tag…"
+            className="bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+          />
+        </div>
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
 
-      {error && (
-        <p
-          role="alert"
-          className="border-b bg-destructive/10 px-3 py-1.5 text-xs text-destructive"
-        >
-          {error}
-        </p>
-      )}
-
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        onInput={(e) =>
-          setContentHtml((e.target as HTMLDivElement).innerHTML)
-        }
-        onKeyDown={onEditorKeyDown}
-        className="prose prose-sm max-w-none flex-1 overflow-y-auto p-4 focus:outline-none"
-        aria-label="Nội dung ghi chú"
-        spellCheck
+      <NoteEditor
+        value={contentHtml}
+        onChange={setContentHtml}
+        onSave={save}
+        placeholder="Viết ghi chú… nhấn / để format"
       />
 
-      <footer className="border-t p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <span>Đính kèm:</span>
-          <label className="cursor-pointer rounded border px-2 py-0.5 hover:bg-accent">
-            + Upload
-            <input type="file" className="hidden" onChange={onFileSelected} />
-          </label>
-          {uploadAttachment.isPending && <span>Đang upload…</span>}
-        </div>
-        {note.attachments.length > 0 && (
-          <ul className="flex flex-wrap gap-2 text-xs">
-            {note.attachments.map((a) => (
+      {note.attachments.length > 0 && (
+        <div className="border-t border-border bg-muted/30 px-4 py-3 md:px-8">
+          <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Đính kèm
+          </div>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {note.attachments.map((att) => (
               <li
-                key={a.id}
-                className="flex items-center gap-1 rounded border px-2 py-1"
+                key={att.id}
+                className="group inline-flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs"
               >
+                <Paperclip className="h-3 w-3 text-muted-foreground" />
                 <a
-                  href={api.attachmentUrl(a.id)}
+                  href={`/api/attachments/${att.id}`}
                   target="_blank"
-                  rel="noreferrer"
-                  className="underline"
+                  rel="noopener noreferrer"
+                  className="max-w-[200px] truncate hover:underline"
                 >
-                  {a.originalName}
+                  {att.originalName}
                 </a>
-                <span className="text-muted-foreground">
-                  ({formatSize(a.sizeBytes)})
-                </span>
                 <button
                   type="button"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    if (confirm("Xoá file đính kèm?"))
-                      deleteAttachment.mutate(a.id);
-                  }}
-                  aria-label={`Xoá ${a.originalName}`}
+                  onClick={() => removeAttachment.mutate(att.id)}
+                  className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                  aria-label="Xóa đính kèm"
                 >
-                  ×
+                  <X className="h-3 w-3" />
                 </button>
               </li>
             ))}
           </ul>
-        )}
-      </footer>
+        </div>
+      )}
     </div>
   );
 }
 
-function parseTags(input: string): string[] {
-  return Array.from(
-    new Set(
-      input
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-    ),
+function EmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="m-auto flex max-w-sm flex-col items-center gap-3 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+        <Star className="h-6 w-6" />
+      </div>
+      <div>
+        <h2 className="text-base font-semibold">Chưa chọn ghi chú</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Chọn từ danh sách bên trái, hoặc tạo mới ngay bây giờ.
+        </p>
+      </div>
+      <Button onClick={onCreate} className="gap-1.5">
+        <Plus className="h-4 w-4" /> Ghi chú mới
+      </Button>
+    </div>
   );
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+/* -------------------- Helpers -------------------- */
+
+function stripHtml(html: string): string {
+  if (typeof window === "undefined") return html.replace(/<[^>]*>/g, " ");
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return (div.textContent || "").replace(/\s+/g, " ").trim();
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+const rtf = new Intl.RelativeTimeFormat("vi-VN", { numeric: "auto" });
+function formatRelative(iso: string): string {
+  const d = new Date(iso);
+  const diff = (d.getTime() - Date.now()) / 1000;
+  const abs = Math.abs(diff);
+  if (abs < 60) return rtf.format(Math.round(diff), "second");
+  if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
+  if (abs < 86_400) return rtf.format(Math.round(diff / 3600), "hour");
+  if (abs < 86_400 * 7) return rtf.format(Math.round(diff / 86_400), "day");
+  return new Intl.DateTimeFormat("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(d);
 }

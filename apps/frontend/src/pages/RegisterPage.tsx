@@ -40,58 +40,93 @@ export function RegisterPage() {
   }
 
   return (
-    <section className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <header>
-        <h1 className="text-2xl font-bold">Tạo tài khoản</h1>
-        <p className="text-sm text-muted-foreground">
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-muted/40 p-4">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-[hsl(var(--dot-purple))]/10 blur-3xl" />
+      </div>
+      <div className="relative z-10 w-full max-w-md animate-fade-in">
+        <div className="mb-6 flex items-center justify-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-soft">
+            <span className="text-lg font-bold">P</span>
+          </div>
+          <span className="text-lg font-semibold tracking-tight">
+            Personal Assistant
+          </span>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-pop sm:p-8">
+          <header className="mb-5">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Tạo tài khoản
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Một workspace cho notes, lịch và chi tiêu — miễn phí và riêng tư.
+            </p>
+          </header>
+          <form onSubmit={onSubmit} className="space-y-4" noValidate>
+            <div className="space-y-1.5">
+              <Label htmlFor="name">Tên hiển thị</Label>
+              <Input
+                id="name"
+                required
+                placeholder="Nguyễn Văn A"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="ban@email.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Mật khẩu</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Ít nhất 12 ký tự"
+                required
+                minLength={12}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <p className="text-2xs text-muted-foreground">
+                Mật khẩu phải có ít nhất 12 ký tự.
+              </p>
+            </div>
+            {error && (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Đang xử lý…" : "Tạo tài khoản"}
+            </Button>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Đã có tài khoản?{" "}
-          <Link to="/login" className="font-medium underline">
+          <Link
+            to="/login"
+            className="font-medium text-primary hover:underline"
+          >
             Đăng nhập
           </Link>
         </p>
-      </header>
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
-        <div className="space-y-1.5">
-          <Label htmlFor="name">Tên hiển thị</Label>
-          <Input
-            id="name"
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Mật khẩu (ít nhất 12 ký tự)</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? "Đang xử lý…" : "Tạo tài khoản"}
-        </Button>
-      </form>
-    </section>
+      </div>
+    </main>
   );
 }

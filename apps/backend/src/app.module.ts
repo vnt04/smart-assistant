@@ -1,7 +1,10 @@
+import * as path from "node:path";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { validateEnv } from "./config/env.validation";
+
+const REPO_ROOT = path.resolve(__dirname, "../../..");
 import { AiModule } from "./ai/ai.module";
 import { AuthModule } from "./auth/auth.module";
 import { CryptoModule } from "./common/crypto/crypto.module";
@@ -18,7 +21,10 @@ import { UsersModule } from "./users/users.module";
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      envFilePath: [".env.local", ".env"],
+      envFilePath: [
+        path.join(REPO_ROOT, ".env.local"),
+        path.join(REPO_ROOT, ".env"),
+      ],
       validate: validateEnv,
     }),
     LoggerModule.forRoot({

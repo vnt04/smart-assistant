@@ -75,8 +75,8 @@ export class NotesService {
       });
     }
 
-    qb.orderBy("n.is_pinned", "DESC")
-      .addOrderBy("n.updated_at", "DESC")
+    qb.orderBy("n.isPinned", "DESC")
+      .addOrderBy("n.updatedAt", "DESC")
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
 

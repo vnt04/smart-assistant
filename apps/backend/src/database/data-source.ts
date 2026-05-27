@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import * as path from "node:path";
 import { config as loadEnv } from "dotenv";
 import { DataSource } from "typeorm";
 import { UserEntity } from "../users/entities/user.entity";
@@ -20,8 +21,10 @@ import { AiMessageEntity } from "../ai/entities/ai-message.entity";
 import { AiToolCallEntity } from "../ai/entities/ai-tool-call.entity";
 
 // Loaded by the typeorm CLI; in app runtime ConfigModule handles env.
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
+// Resolve from monorepo root so the CLI works regardless of cwd.
+const repoRoot = path.resolve(__dirname, "../../../..");
+loadEnv({ path: path.join(repoRoot, ".env.local") });
+loadEnv({ path: path.join(repoRoot, ".env") });
 
 const isCompiled = __filename.endsWith(".js");
 

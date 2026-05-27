@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import typography from "@tailwindcss/typography";
 
 export default {
   darkMode: ["class"],
@@ -40,6 +41,28 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          muted: "hsl(var(--sidebar-muted))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+        },
+        dot: {
+          red: "hsl(var(--dot-red))",
+          orange: "hsl(var(--dot-orange))",
+          yellow: "hsl(var(--dot-yellow))",
+          green: "hsl(var(--dot-green))",
+          blue: "hsl(var(--dot-blue))",
+          purple: "hsl(var(--dot-purple))",
+          pink: "hsl(var(--dot-pink))",
+          cyan: "hsl(var(--dot-cyan))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -49,6 +72,7 @@ export default {
       fontFamily: {
         sans: [
           "Inter",
+          "ui-sans-serif",
           "system-ui",
           "-apple-system",
           "Segoe UI",
@@ -56,7 +80,33 @@ export default {
           "sans-serif",
         ],
       },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+      },
+      boxShadow: {
+        soft: "0 1px 2px hsl(220 13% 50% / 0.06), 0 4px 12px hsl(220 13% 50% / 0.06)",
+        pop: "0 8px 24px hsl(220 13% 30% / 0.12)",
+      },
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "slide-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "slide-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 150ms ease-out",
+        "slide-in-right": "slide-in-right 220ms ease-out",
+        "slide-in-left": "slide-in-left 220ms ease-out",
+      },
     },
   },
-  plugins: [],
+  plugins: [typography],
 } satisfies Config;

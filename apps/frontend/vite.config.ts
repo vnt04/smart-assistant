@@ -4,8 +4,9 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
-  const backendOrigin = env.VITE_BACKEND_ORIGIN ?? "http://localhost:3000";
+  const repoRoot = path.resolve(__dirname, "../..");
+  const env = { ...loadEnv(mode, repoRoot, ""), ...loadEnv(mode, process.cwd(), "") };
+  const backendOrigin = env.VITE_BACKEND_ORIGIN ?? "http://127.0.0.1:3099";
 
   return {
     resolve: {

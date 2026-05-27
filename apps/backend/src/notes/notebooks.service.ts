@@ -90,6 +90,33 @@ export class NotebooksService {
     await this.repo.remove(entity);
   }
 
+  /** Returns the notebook id plus every transitive descendant id. */
+  async descendantIds(userId: string, rootId: string): Promise<string[]> {
+    const all = await this.repo.find({
+      where: { userId },
+      select: ["id", "parentId"],
+    });
+    const childrenByParent = new Map<string, string[]>();
+    for (const row of all) {
+      if (!row.parentId) continue;
+      const bucket = childrenByParent.get(row.parentId);
+      if (bucket) bucket.push(row.id);
+      else childrenByParent.set(row.parentId, [row.id]);
+    }
+    const result: string[] = [];
+    const stack: string[] = [rootId];
+    const seen = new Set<string>();
+    while (stack.length) {
+      const id = stack.pop() as string;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push(id);
+      const kids = childrenByParent.get(id);
+      if (kids) stack.push(...kids);
+    }
+    return result;
+  }
+
   private async wouldCreateCycle(
     userId: string,
     movingId: string,

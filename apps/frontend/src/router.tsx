@@ -1,13 +1,13 @@
 import {
-  Link,
   Outlet,
   Router,
   RootRoute,
   Route,
   useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Button } from "./components/ui/button";
+import { AppShell } from "./components/layout/app-shell";
 import { useAuth } from "./features/auth/AuthContext";
 import { AssistantPage } from "./pages/AssistantPage";
 import { ExpensePage } from "./pages/ExpensePage";
@@ -22,92 +22,38 @@ import { GoogleCallbackPage } from "./pages/GoogleCallbackPage";
 const PUBLIC_PATHS = ["/login", "/register", "/auth/callback"];
 
 function RootLayout() {
-  const { user, status, logout } = useAuth();
+  const { status } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      const path = window.location.pathname;
-      if (!PUBLIC_PATHS.includes(path)) {
-        void navigate({ to: "/login" });
-      }
+    if (status === "unauthenticated" && !PUBLIC_PATHS.includes(pathname)) {
+      void navigate({ to: "/login" });
     }
-  }, [status, navigate]);
+  }, [status, pathname, navigate]);
+
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+
+  if (status === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Đang tải…
+      </div>
+    );
+  }
+
+  if (isPublic || status === "unauthenticated") {
+    return (
+      <div className="min-h-full bg-background text-foreground">
+        <Outlet />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="border-b">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <Link to="/" className="font-semibold">
-            Personal Assistant
-          </Link>
-          <nav className="flex items-center gap-2 text-sm">
-            {user ? (
-              <>
-                <Link
-                  to="/notes"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Notes
-                </Link>
-                <Link
-                  to="/schedule"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Lịch
-                </Link>
-                <Link
-                  to="/expense"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Chi tiêu
-                </Link>
-                <Link
-                  to="/assistant"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Trợ lý
-                </Link>
-                <Link
-                  to="/settings"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Cài đặt
-                </Link>
-                <span className="text-muted-foreground">{user.email}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    void logout().then(() => navigate({ to: "/login" }));
-                  }}
-                >
-                  Đăng xuất
-                </Button>
-              </>
-            ) : (
-              <>
-                <Link
-                  to="/login"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Đăng nhập
-                </Link>
-                <Link
-                  to="/register"
-                  className="rounded px-3 py-1.5 hover:bg-accent"
-                >
-                  Đăng ký
-                </Link>
-              </>
-            )}
-          </nav>
-        </div>
-      </header>
-      <main className="flex-1">
-        <Outlet />
-      </main>
-    </div>
+    <AppShell>
+      <Outlet />
+    </AppShell>
   );
 }
 
