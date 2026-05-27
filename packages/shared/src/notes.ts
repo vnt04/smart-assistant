@@ -44,10 +44,11 @@ export type Note = z.infer<typeof noteSchema>;
 export const noteListQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   notebookId: z.union([idSchema, z.literal("none")]).optional(),
+  includeChildren: z.coerce.boolean().optional(),
   tag: tagNameSchema.optional(),
   pinned: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(500).default(20),
 });
 export type NoteListQuery = z.infer<typeof noteListQuerySchema>;
 

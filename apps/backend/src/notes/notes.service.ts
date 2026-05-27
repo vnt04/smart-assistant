@@ -40,7 +40,19 @@ export class NotesService {
     if (query.notebookId === "none") {
       qb.andWhere("n.notebook_id IS NULL");
     } else if (query.notebookId) {
-      qb.andWhere("n.notebook_id = :nbId", { nbId: query.notebookId });
+      if (query.includeChildren) {
+        const ids = await this.notebooks.descendantIds(
+          userId,
+          query.notebookId,
+        );
+        if (ids.length === 0) {
+          qb.andWhere("1 = 0");
+        } else {
+          qb.andWhere("n.notebook_id IN (:...nbIds)", { nbIds: ids });
+        }
+      } else {
+        qb.andWhere("n.notebook_id = :nbId", { nbId: query.notebookId });
+      }
     }
 
     if (query.tag) {

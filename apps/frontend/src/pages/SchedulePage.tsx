@@ -15,6 +15,7 @@ import type {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { useConfirm } from "../components/ui/confirm-dialog";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 
@@ -100,6 +101,7 @@ function fromLocalInputValue(value: string): string {
 
 export function SchedulePage() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [view, setView] = useState<View>("calendar");
   const [monthCursor, setMonthCursor] = useState<Date>(() => new Date());
   const [eventModal, setEventModal] = useState<EventDto | "new" | null>(null);
@@ -268,10 +270,14 @@ export function SchedulePage() {
             updateTask.mutate({ id: task.id, input: { status } })
           }
           onClick={(t) => setTaskModal(t)}
-          onDelete={(t) => {
-            if (window.confirm(`Xoá task "${t.title}"?`)) {
-              deleteTask.mutate(t.id);
-            }
+          onDelete={async (t) => {
+            const ok = await confirm({
+              title: `Xoá task "${t.title}"?`,
+              description: "Hành động này không thể hoàn tác.",
+              confirmText: "Xoá",
+              variant: "destructive",
+            });
+            if (ok) deleteTask.mutate(t.id);
           }}
         />
       )}
@@ -290,7 +296,13 @@ export function SchedulePage() {
             setEventModal(null);
           }}
           onDelete={async (id) => {
-            if (window.confirm("Xoá sự kiện này?")) {
+            const ok = await confirm({
+              title: "Xoá sự kiện này?",
+              description: "Sự kiện sẽ bị xoá vĩnh viễn.",
+              confirmText: "Xoá",
+              variant: "destructive",
+            });
+            if (ok) {
               await deleteEvent.mutateAsync(id);
               setEventModal(null);
             }
@@ -312,7 +324,13 @@ export function SchedulePage() {
             setTaskModal(null);
           }}
           onDelete={async (id) => {
-            if (window.confirm("Xoá task này?")) {
+            const ok = await confirm({
+              title: "Xoá task này?",
+              description: "Task sẽ bị xoá vĩnh viễn.",
+              confirmText: "Xoá",
+              variant: "destructive",
+            });
+            if (ok) {
               await deleteTask.mutateAsync(id);
               setTaskModal(null);
             }

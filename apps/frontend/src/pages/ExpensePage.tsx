@@ -13,6 +13,7 @@ import type {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { useConfirm } from "../components/ui/confirm-dialog";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 
@@ -107,6 +108,7 @@ function parseMoney(value: string): number {
 
 export function ExpensePage() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<ExpenseTab>("transactions");
   const [month, setMonth] = useState(currentMonth);
   const [transactionModal, setTransactionModal] =
@@ -329,10 +331,14 @@ export function ExpensePage() {
               isLoading={transactionsQuery.isLoading}
               onCreate={() => setTransactionModal("new")}
               onEdit={setTransactionModal}
-              onDelete={(tx) => {
-                if (window.confirm("Xoá giao dịch này?")) {
-                  deleteTransaction.mutate(tx.id);
-                }
+              onDelete={async (tx) => {
+                const ok = await confirm({
+                  title: "Xoá giao dịch này?",
+                  description: "Giao dịch sẽ bị xoá vĩnh viễn.",
+                  confirmText: "Xoá",
+                  variant: "destructive",
+                });
+                if (ok) deleteTransaction.mutate(tx.id);
               }}
             />
           )}
@@ -342,10 +348,14 @@ export function ExpensePage() {
               isLoading={walletsQuery.isLoading}
               onCreate={() => setWalletModal("new")}
               onEdit={setWalletModal}
-              onDelete={(wallet) => {
-                if (window.confirm(`Xoá ví "${wallet.name}"?`)) {
-                  deleteWallet.mutate(wallet.id);
-                }
+              onDelete={async (wallet) => {
+                const ok = await confirm({
+                  title: `Xoá ví "${wallet.name}"?`,
+                  description: "Các giao dịch thuộc ví này có thể bị ảnh hưởng.",
+                  confirmText: "Xoá",
+                  variant: "destructive",
+                });
+                if (ok) deleteWallet.mutate(wallet.id);
               }}
             />
           )}
@@ -357,10 +367,14 @@ export function ExpensePage() {
               isLoading={budgetsQuery.isLoading}
               onCreate={() => setBudgetModal("new")}
               onEdit={setBudgetModal}
-              onDelete={(budget) => {
-                if (window.confirm("Xoá ngân sách này?")) {
-                  deleteBudget.mutate(budget.id);
-                }
+              onDelete={async (budget) => {
+                const ok = await confirm({
+                  title: "Xoá ngân sách này?",
+                  description: "Ngân sách sẽ bị xoá vĩnh viễn.",
+                  confirmText: "Xoá",
+                  variant: "destructive",
+                });
+                if (ok) deleteBudget.mutate(budget.id);
               }}
             />
           )}
