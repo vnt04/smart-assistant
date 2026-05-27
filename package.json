@@ -24,7 +24,7 @@
     "prod:up": "docker compose --env-file .env.production -f docker-compose.prod.yml up -d",
     "prod:down": "docker compose --env-file .env.production -f docker-compose.prod.yml down",
     "prod:logs": "docker compose --env-file .env.production -f docker-compose.prod.yml logs -f",
-    "prod:migrate": "docker compose --env-file .env.production -f docker-compose.prod.yml exec backend npm --prefix /app run migration:run",
+    "prod:migrate": "docker compose --env-file .env.production -f docker-compose.prod.yml exec backend sh -lc \"cd /app && node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run\"",
     "prod:backup": "docker compose --env-file .env.production -f docker-compose.prod.yml --profile backup run --rm backup",
     "clean": "pnpm -r exec rm -rf dist .turbo tsconfig.tsbuildinfo node_modules/.cache"
   },

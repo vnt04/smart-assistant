@@ -165,7 +165,7 @@ curl https://<APP_DOMAIN>/api/health
 
 ### 3.5. Chạy migration production
 
-Sau khi backend container đã chạy:
+Sau khi backend container đã chạy, chạy TypeORM migrations trong backend container:
 
 ```bash
 pnpm prod:migrate
@@ -193,6 +193,36 @@ systemctl reload nginx
 ```
 
 Nên đặt cron trên server chạy lệnh renew hằng ngày hoặc hằng tuần.
+
+### 3.7. Deploy khi có update code mới
+
+Khi có code mới trên branch production, SSH vào server và pull code mới:
+
+```bash
+git pull
+```
+
+Build lại image và khởi động lại stack:
+
+```bash
+pnpm prod:build
+pnpm prod:up
+```
+
+Nếu update có thay đổi database schema, chạy migration sau khi backend đã lên:
+
+```bash
+pnpm prod:migrate
+```
+
+Kiểm tra health và xem logs nếu cần:
+
+```bash
+curl https://<APP_DOMAIN>/api/health
+pnpm prod:logs
+```
+
+Nếu update có thay đổi `.env.production.example`, đối chiếu và bổ sung biến mới vào `.env.production` trên server trước khi chạy `pnpm prod:up`.
 
 ## 4. Backup và restore
 
