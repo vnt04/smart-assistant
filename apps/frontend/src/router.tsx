@@ -25,14 +25,20 @@ function RootLayout() {
   const { status } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isPublic = PUBLIC_PATHS.includes(pathname);
 
   useEffect(() => {
-    if (status === "unauthenticated" && !PUBLIC_PATHS.includes(pathname)) {
-      void navigate({ to: "/login" });
+    if (status === "loading") return;
+    if (
+      status === "authenticated" &&
+      isPublic &&
+      pathname !== "/auth/callback"
+    ) {
+      void navigate({ to: "/", replace: true });
+    } else if (status === "unauthenticated" && !isPublic) {
+      void navigate({ to: "/login", replace: true });
     }
-  }, [status, pathname, navigate]);
-
-  const isPublic = PUBLIC_PATHS.includes(pathname);
+  }, [status, isPublic, pathname, navigate]);
 
   if (status === "loading") {
     return (
