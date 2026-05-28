@@ -15,7 +15,7 @@ Setup guide: [`docs/setup.md`](./docs/setup.md).
 | Frontend | React 18 + Vite + TypeScript, Tailwind + Shadcn/ui, TanStack Query/Router, TipTap, vite-plugin-pwa |
 | Backend | NestJS 10 + TypeORM, MySQL 8, Redis 7, BullMQ, Passport (JWT + Google), Pino |
 | Shared | Zod schemas in `packages/shared` |
-| Infra | Docker Compose (MySQL, Redis), Nginx + Certbot in prod |
+| Infra | Docker Compose (MySQL + Redis dev; Redis only in prod, MySQL native trên host), Nginx + Certbot |
 
 ## Layout
 

@@ -75,6 +75,33 @@ Trên server Linux, cài Docker và Docker Compose plugin. Mở firewall cho:
 
 - TCP 80
 - TCP 443
+- TCP 22 (SSH)
+
+Production stack KHÔNG chạy MySQL trong Docker. Backend container kết nối tới MySQL native cài trên host (qua `host.docker.internal` → docker bridge gateway → MySQL listening trên host).
+
+Yêu cầu MySQL trên host:
+
+- MySQL 8.0+ đã cài và đang chạy (`systemctl status mysql`).
+- Bind-address cho phép Docker bridge connect (mặc định `0.0.0.0` là OK; nếu `127.0.0.1` thì sửa thành `0.0.0.0` trong `/etc/mysql/mysql.conf.d/mysqld.cnf`).
+- Firewall: **đóng port 3306 ra internet**, chỉ mở cho `docker0`:
+
+  ```bash
+  sudo ufw deny 3306
+  sudo ufw allow in on docker0 to any port 3306
+  ```
+
+- Tạo DB + user app:
+
+  ```sql
+  CREATE DATABASE assistant CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER 'assistant'@'172.%.%.%' IDENTIFIED BY '<password mạnh>';
+  GRANT ALL ON assistant.* TO 'assistant'@'172.%.%.%';
+  FLUSH PRIVILEGES;
+  ```
+
+  Source `'172.%.%.%'` giới hạn user app chỉ connect được từ Docker bridge subnet, không từ internet.
+
+- Quản lý DB tập trung qua DBeaver/TablePlus: dùng SSH tunnel → MySQL `127.0.0.1:3306` với admin user riêng. Đừng tạo `root@%` hoặc admin user `@%` — nguy cơ brute-force.
 
 Clone source code lên server và checkout branch cần deploy.
 
@@ -93,8 +120,11 @@ Cập nhật các biến production:
 - `JWT_ACCESS_SECRET`: secret mạnh, không dùng giá trị mẫu
 - `JWT_REFRESH_SECRET`: secret mạnh, không dùng giá trị mẫu
 - `ENCRYPTION_KEY`: 64 ký tự hex
-- `MYSQL_PASSWORD`: mật khẩu user app
-- `MYSQL_ROOT_PASSWORD`: mật khẩu root MySQL
+- `MYSQL_HOST`: `host.docker.internal` (backend Docker → MySQL native trên host qua bridge gateway). Hoặc IP public của server nếu cần override.
+- `MYSQL_PORT`: thường `3306`
+- `MYSQL_DATABASE`: `assistant`
+- `MYSQL_USER`: `assistant` (user app đã tạo ở 3.1)
+- `MYSQL_PASSWORD`: password mạnh của `assistant` user
 
 Không commit `.env.production`.
 
@@ -232,6 +262,8 @@ Nếu update có thay đổi `.env.production.example`, đối chiếu và bổ 
 pnpm prod:backup
 ```
 
+Service `backup` chạy `mysqldump` từ container, kết nối tới `${MYSQL_HOST}` (MySQL native trên host) bằng `${MYSQL_USER}`/`${MYSQL_PASSWORD}` trong `.env.production`. User app `assistant` chỉ có quyền trên DB `assistant` nên dump chỉ chứa schema/data của project này.
+
 Backup được ghi vào `./backups/YYYYMMDDTHHMMSSZ/` gồm:
 
 - `mysql.sql`: dump MySQL
@@ -239,6 +271,8 @@ Backup được ghi vào `./backups/YYYYMMDDTHHMMSSZ/` gồm:
 - `manifest.txt`: metadata backup
 
 `BACKUP_RETENTION_DAYS` trong `.env.production` điều khiển số ngày giữ backup cũ.
+
+Lưu ý: backup của các DB khác trên host MySQL (vd Laravel project khác) **không** được dump bởi script này — mỗi project tự backup DB của mình. Hoặc setup mysqldump cron trên host trực tiếp với admin user.
 
 ### 4.2. Restore
 

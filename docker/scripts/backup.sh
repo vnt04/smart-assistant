@@ -8,9 +8,10 @@ RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 mkdir -p "${BACKUP_DIR}"
 
 mysqldump \
-  --host=mysql \
-  --user=root \
-  --password="${MYSQL_ROOT_PASSWORD}" \
+  --host="${MYSQL_HOST}" \
+  --port="${MYSQL_PORT:-3306}" \
+  --user="${MYSQL_USER}" \
+  --password="${MYSQL_PASSWORD}" \
   --single-transaction \
   --routines \
   --triggers \
