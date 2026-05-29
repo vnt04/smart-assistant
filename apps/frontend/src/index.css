@@ -148,7 +148,7 @@
   }
 
   .editor-canvas {
-    @apply mx-auto w-full max-w-[760px] px-6 py-10 md:px-10 lg:py-14;
+    @apply mx-auto w-full max-w-[768px] px-6 py-10 md:px-10 lg:max-w-[900px] xl:max-w-[1150px] 2xl:max-w-[1400px] lg:py-14;
   }
 
   .prose-app h1 {
@@ -183,14 +183,60 @@
   .prose-app ul[data-type="taskList"] li {
     @apply flex items-start gap-2 my-1;
   }
+  /* Align the checkbox to the first text line (leading-7 = 1.75rem tall). */
   .prose-app ul[data-type="taskList"] li > label {
-    @apply mt-1.5 inline-flex shrink-0;
+    @apply m-0 inline-flex h-7 shrink-0 items-center;
+  }
+  .prose-app ul[data-type="taskList"] li > label > input[type="checkbox"] {
+    @apply h-4 w-4 cursor-pointer rounded border border-border;
+    accent-color: hsl(var(--primary));
   }
   .prose-app ul[data-type="taskList"] li > div {
-    @apply flex-1 min-w-0;
+    @apply min-w-0 flex-1;
+  }
+  .prose-app ul[data-type="taskList"] li > div > p {
+    @apply my-0 leading-7;
+  }
+  .prose-app ul[data-type="taskList"] li[data-checked="true"] > div {
+    @apply text-muted-foreground line-through;
   }
   .prose-app img {
     @apply rounded-lg my-4 max-w-full;
+  }
+
+  /* Tables */
+  .prose-app .tableWrapper {
+    @apply my-4 overflow-x-auto;
+  }
+  .prose-app table {
+    @apply w-full border-collapse text-sm;
+    table-layout: fixed;
+    margin: 0;
+  }
+  .prose-app table td,
+  .prose-app table th {
+    @apply border border-border px-3 py-1.5 align-top;
+    position: relative;
+    min-width: 5rem;
+  }
+  .prose-app table th {
+    @apply bg-muted text-left font-semibold;
+  }
+  .prose-app table td > p,
+  .prose-app table th > p {
+    @apply my-0;
+  }
+  .prose-app table .selectedCell::after {
+    @apply pointer-events-none absolute inset-0 z-[2] bg-primary/10;
+    content: "";
+  }
+  .prose-app table .column-resize-handle {
+    @apply absolute -right-0.5 top-0 z-20 w-1 cursor-col-resize bg-primary/50;
+    bottom: -1px;
+  }
+  .prose-app.resize-cursor,
+  .prose-app .resize-cursor {
+    cursor: col-resize;
   }
 
   .tiptap-placeholder.is-empty::before {
@@ -224,4 +270,16 @@
 }
 .hljs-tag {
   color: hsl(var(--dot-red));
+}
+
+/* Optically center short single-line text against adjacent icons (tag chips,
+   selectors, attachment pills). Trims the line box to the cap-height/baseline
+   so flex `items-center` centers the visible glyphs, not the font's metrics. */
+.leading-trim {
+  line-height: 1;
+}
+@supports (text-box: trim-both cap alphabetic) {
+  .leading-trim {
+    text-box: trim-both cap alphabetic;
+  }
 }

@@ -1247,7 +1247,7 @@ function SelectBox({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
-      className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </select>
@@ -1274,7 +1274,7 @@ function TextAreaBox({
       maxLength={maxLength}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none"
     />
   );
 }

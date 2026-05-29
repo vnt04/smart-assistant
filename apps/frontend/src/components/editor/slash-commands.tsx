@@ -25,6 +25,7 @@ import {
   type LucideIcon,
   Minus,
   Quote,
+  Table as TableIcon,
   Type,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
@@ -124,6 +125,19 @@ const ITEMS: SlashItem[] = [
     keywords: ["code", "pre", "snippet"],
     command: ({ editor, range }) =>
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run(),
+  },
+  {
+    title: "Bảng",
+    description: "Chèn bảng 3×3 có hàng tiêu đề",
+    icon: TableIcon,
+    keywords: ["table", "bang", "grid", "row", "column", "cot", "hang"],
+    command: ({ editor, range }) =>
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run(),
   },
   {
     title: "Đường kẻ",

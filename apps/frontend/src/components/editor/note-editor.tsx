@@ -1,4 +1,9 @@
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import {
+  useEditor,
+  useEditorState,
+  EditorContent,
+  type Editor,
+} from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -11,15 +16,22 @@ import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
 import { common, createLowlight } from "lowlight";
 import {
   Bold,
   Code,
+  Heading,
   Highlighter,
   Italic,
   Link2,
+  Minus,
   Plus,
   Strikethrough,
+  Trash2,
   Underline as UnderlineIcon,
 } from "lucide-react";
 import { useEffect } from "react";
@@ -74,6 +86,10 @@ export function NoteEditor({
       Highlight.configure({ multicolor: false }),
       Image.configure({ inline: false, allowBase64: true }),
       CodeBlockLowlight.configure({ lowlight }),
+      Table.configure({ resizable: true, allowTableNodeSelection: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
       SlashCommands,
     ],
     editorProps: {
@@ -144,6 +160,8 @@ export function NoteEditor({
         className,
       )}
     >
+      {editable && <TableToolbar editor={editor} />}
+
       <BubbleMenu
         editor={editor}
         options={{ placement: "top" }}
@@ -271,6 +289,114 @@ function BubbleBtn({
       className={cn(
         "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
         active && "bg-accent text-accent-foreground",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* -------------------- Table toolbar -------------------- */
+
+function TableToolbar({ editor }: { editor: Editor }) {
+  const isInTable = useEditorState({
+    editor,
+    selector: ({ editor }) => editor.isActive("table"),
+  });
+
+  if (!isInTable) return null;
+
+  return (
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-b border-border bg-background/95 px-4 py-1.5 backdrop-blur md:px-8">
+      <TableGroup label="Cột">
+        <TableBtn
+          title="Thêm cột"
+          onClick={() => editor.chain().focus().addColumnAfter().run()}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </TableBtn>
+        <TableBtn
+          title="Xoá cột"
+          onClick={() => editor.chain().focus().deleteColumn().run()}
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </TableBtn>
+      </TableGroup>
+
+      <span aria-hidden className="h-4 w-px bg-border" />
+
+      <TableGroup label="Hàng">
+        <TableBtn
+          title="Thêm hàng"
+          onClick={() => editor.chain().focus().addRowAfter().run()}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </TableBtn>
+        <TableBtn
+          title="Xoá hàng"
+          onClick={() => editor.chain().focus().deleteRow().run()}
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </TableBtn>
+      </TableGroup>
+
+      <span aria-hidden className="h-4 w-px bg-border" />
+
+      <TableBtn
+        title="Bật/tắt hàng tiêu đề"
+        onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+      >
+        <Heading className="h-3.5 w-3.5" />
+      </TableBtn>
+
+      <TableBtn
+        title="Xoá bảng"
+        destructive
+        onClick={() => editor.chain().focus().deleteTable().run()}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </TableBtn>
+    </div>
+  );
+}
+
+function TableGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <span className="mr-0.5 text-2xs font-medium text-muted-foreground">
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function TableBtn({
+  title,
+  onClick,
+  destructive,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  destructive?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={cn(
+        "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+        destructive && "hover:bg-destructive/10 hover:text-destructive",
       )}
     >
       {children}

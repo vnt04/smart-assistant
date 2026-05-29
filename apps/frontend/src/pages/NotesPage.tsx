@@ -6,15 +6,17 @@ import {
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type {
   CreateNotebookInput,
   Note,
   Notebook,
+  NoteSummary,
+  UpdateNoteInput,
   UpdateNotebookInput,
 } from "@assistant/shared";
 import {
@@ -55,8 +57,26 @@ export function NotesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mobileView, setMobileView] = useState<"list" | "editor">("list");
+  const navigate = useNavigate();
+  const { note: routeNoteId } = useSearch({ from: "/notes" });
+  const selectedId = routeNoteId ?? null;
+  const setSelectedId = useCallback(
+    (id: string | null) => {
+      void navigate({
+        to: "/notes",
+        search: { note: id ?? undefined },
+        // Deselecting (id === null) is a corrective navigation — clearing a
+        // deleted/invalid note — not a place the user should reach with Back.
+        // Selecting a note pushes so Back returns to the previous note.
+        replace: id === null,
+      });
+    },
+    [navigate],
+  );
+  const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "editor">(
+    routeNoteId ? "editor" : "list",
+  );
   const [explorerSheetOpen, setExplorerSheetOpen] = useState(false);
 
   useEffect(() => {
@@ -89,19 +109,22 @@ export function NotesPage() {
 
   const notes = notesQuery.data?.items ?? [];
 
-  useEffect(() => {
-    if (selectedId && !notes.some((n) => n.id === selectedId)) {
-      // Selection no longer in the visible list. If it's because the note was
-      // deleted or filtered out, clear it; the user can pick another.
-      setSelectedId(null);
-    }
-  }, [notes, selectedId]);
-
   const selectedQuery = useQuery({
     queryKey: ["note", selectedId],
     queryFn: () => api.getNote(selectedId as string),
     enabled: Boolean(selectedId),
   });
+
+  useEffect(() => {
+    if (!selectedId || !selectedQuery.isError) return;
+    // Only clear when the note is genuinely gone (404) or forbidden (403).
+    // Transient errors (500, network) must keep ?note=<id> so a retry/reload
+    // can still restore the note instead of silently losing the user's place.
+    const err = selectedQuery.error;
+    const gone =
+      err instanceof ApiError && (err.status === 404 || err.status === 403);
+    if (gone) setSelectedId(null);
+  }, [selectedId, selectedQuery.isError, selectedQuery.error, setSelectedId]);
 
   const invalidateLists = useCallback(() => {
     void qc.invalidateQueries({ queryKey: ["notes"] });
@@ -117,8 +140,18 @@ export function NotesPage() {
       invalidateLists();
       void qc.invalidateQueries({ queryKey: ["tags"] });
       setSelectedId(note.id);
+      setAutoFocusNoteId(note.id);
       setMobileView("editor");
       setExplorerSheetOpen(false);
+    },
+  });
+
+  const patchNote = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateNoteInput }) =>
+      api.updateNote(id, input),
+    onSuccess: (saved) => {
+      invalidateLists();
+      qc.setQueryData(["note", saved.id], saved);
     },
   });
 
@@ -162,11 +195,14 @@ export function NotesPage() {
     [activeTag, createNote],
   );
 
-  const handleSelectNote = useCallback((id: string): void => {
-    setSelectedId(id);
-    setMobileView("editor");
-    setExplorerSheetOpen(false);
-  }, []);
+  const handleSelectNote = useCallback(
+    (id: string): void => {
+      setSelectedId(id);
+      setMobileView("editor");
+      setExplorerSheetOpen(false);
+    },
+    [setSelectedId],
+  );
 
   const explorer = (
     <NotesExplorer
@@ -180,6 +216,15 @@ export function NotesPage() {
       onDeleteNote={async (id) => {
         await deleteNote.mutateAsync(id);
       }}
+      onTogglePinNote={async (note: NoteSummary) => {
+        await patchNote.mutateAsync({
+          id: note.id,
+          input: { isPinned: !note.isPinned },
+        });
+      }}
+      onMoveNote={async (noteId, notebookId) => {
+        await patchNote.mutateAsync({ id: noteId, input: { notebookId } });
+      }}
       onCreateNotebook={async ({ name, parentId }) => {
         await createNotebookMut.mutateAsync({ name, parentId });
       }}
@@ -191,6 +236,9 @@ export function NotesPage() {
       }}
       onDeleteNotebook={async (id) => {
         await deleteNotebookMut.mutateAsync(id);
+      }}
+      onMoveNotebook={async (id, parentId) => {
+        await updateNotebookMut.mutateAsync({ id, input: { parentId } });
       }}
       tags={tagsQuery.data ?? []}
       activeTag={activeTag}
@@ -228,11 +276,13 @@ export function NotesPage() {
           mobileView === "list" && "hidden md:flex",
         )}
       >
-        {selectedId && selectedQuery.data ? (
+        {selectedId ? (
+          selectedQuery.data ? (
           <NoteWorkspace
             key={selectedId}
             note={selectedQuery.data}
             notebooks={notebooks}
+            autoFocus={selectedId === autoFocusNoteId}
             onBack={() => setMobileView("list")}
             onOpenExplorer={() => setExplorerSheetOpen(true)}
             onSaved={(note) => {
@@ -246,6 +296,11 @@ export function NotesPage() {
               invalidateLists();
             }}
           />
+          ) : (
+            <div className="m-auto flex items-center justify-center text-sm text-muted-foreground">
+              Đang tải…
+            </div>
+          )
         ) : (
           <EmptyState onCreate={() => void handleCreateNote(null)} />
         )}
@@ -259,6 +314,7 @@ export function NotesPage() {
 interface NoteWorkspaceProps {
   note: Note;
   notebooks: Notebook[];
+  autoFocus?: boolean;
   onSaved: (note: Note) => void;
   onDeleted: () => void;
   onBack: () => void;
@@ -268,6 +324,7 @@ interface NoteWorkspaceProps {
 function NoteWorkspace({
   note,
   notebooks,
+  autoFocus,
   onSaved,
   onDeleted,
   onBack,
@@ -292,6 +349,16 @@ function NoteWorkspace({
     setNotebookId(note.notebookId);
     setIsPinned(note.isPinned);
   }, [note.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Freshly created notes drop the cursor straight into the title.
+  useEffect(() => {
+    if (!autoFocus) return;
+    const handle = setTimeout(() => {
+      titleRef.current?.focus();
+      titleRef.current?.select();
+    }, 0);
+    return () => clearTimeout(handle);
+  }, [autoFocus]);
 
   const update = useMutation({
     mutationFn: (payload: {
@@ -402,19 +469,21 @@ function NoteWorkspace({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs leading-none hover:bg-muted"
             >
               <span
-                className="h-2 w-2 rounded-full"
+                className="h-2 w-2 shrink-0 rounded-full"
                 style={{
                   background:
                     notebooks.find((n) => n.id === notebookId)?.color ??
                     "hsl(var(--muted-foreground))",
                 }}
               />
-              {notebooks.find((n) => n.id === notebookId)?.name ??
-                "Chưa phân loại"}
-              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              <span className="leading-trim">
+                {notebooks.find((n) => n.id === notebookId)?.name ??
+                  "Chưa phân loại"}
+              </span>
+              <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 overflow-auto">
@@ -501,40 +570,48 @@ function NoteWorkspace({
         </div>
       </header>
 
-      <div className="border-b border-border px-4 pb-3 pt-4 md:px-8 md:pt-6">
-        <input
-          ref={titleRef}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Tiêu đề ghi chú"
-          className="w-full bg-transparent text-3xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60"
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {tags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => setTags(tags.filter((t) => t !== tag))}
-              className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground hover:bg-accent/80"
-            >
-              <span>#{tag}</span>
-              <X className="h-3 w-3" />
-            </button>
-          ))}
+      <div className="border-b border-border pb-3 pt-4 md:pt-6">
+        <div className="mx-auto w-full max-w-[768px] px-6 md:px-10 lg:max-w-[900px] xl:max-w-[1150px] 2xl:max-w-[1400px]">
           <input
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={onTagKey}
-            onBlur={() => addTag(tagInput)}
-            placeholder="Thêm tag…"
-            className="bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+            ref={titleRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Tiêu đề ghi chú"
+            className="w-full bg-transparent text-3xl font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60"
           />
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="group/tag inline-flex items-center rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground transition-colors"
+              >
+                <span className="leading-trim">{tag}</span>
+                <button
+                  type="button"
+                  onClick={() => setTags(tags.filter((t) => t !== tag))}
+                  aria-label={`Xoá tag ${tag}`}
+                  title="Xoá tag"
+                  className="ml-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full text-accent-foreground/60 transition-colors hover:bg-accent-foreground/15 hover:text-accent-foreground group-hover/tag:inline-flex"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={onTagKey}
+              onBlur={() => addTag(tagInput)}
+              placeholder="Thêm tag…"
+              className="h-6 bg-transparent text-xs leading-none outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+          {error && (
+            <p role="alert" className="mt-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
         </div>
-        {error && (
-          <p role="alert" className="mt-2 text-xs text-destructive">
-            {error}
-          </p>
-        )}
       </div>
 
       <NoteEditor
@@ -553,21 +630,21 @@ function NoteWorkspace({
             {note.attachments.map((att) => (
               <li
                 key={att.id}
-                className="group inline-flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-xs"
+                className="group inline-flex h-7 items-center gap-2 rounded-md border border-border bg-card px-2 text-xs leading-none"
               >
-                <Paperclip className="h-3 w-3 text-muted-foreground" />
+                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
                 <a
                   href={`/api/attachments/${att.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="max-w-[200px] truncate hover:underline"
+                  className="max-w-[200px] truncate leading-trim hover:underline"
                 >
                   {att.originalName}
                 </a>
                 <button
                   type="button"
                   onClick={() => removeAttachment.mutate(att.id)}
-                  className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                  className="inline-flex shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                   aria-label="Xóa đính kèm"
                 >
                   <X className="h-3 w-3" />

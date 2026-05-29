@@ -83,10 +83,18 @@ const registerRoute = new Route({
   component: RegisterPage,
 });
 
+interface NotesSearch {
+  note?: string;
+}
+
 const notesRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/notes",
   component: NotesPage,
+  validateSearch: (search: Record<string, unknown>): NotesSearch => ({
+    note:
+      typeof search.note === "string" && search.note ? search.note : undefined,
+  }),
 });
 
 const scheduleRoute = new Route({

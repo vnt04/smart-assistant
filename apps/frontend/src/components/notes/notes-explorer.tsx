@@ -1,7 +1,11 @@
 import {
+  createContext,
+  useCallback,
+  useContext,
   useEffect,
   useMemo,
   useState,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -54,6 +58,9 @@ export interface NotesExplorerProps {
   onSelectNote: (id: string) => void;
   onCreateNote: (notebookId: string | null) => Promise<void> | void;
   onDeleteNote: (id: string) => Promise<void> | void;
+  onTogglePinNote: (note: NoteSummary) => Promise<void> | void;
+  /** Move a note into a notebook (null = uncategorized / top level). */
+  onMoveNote: (noteId: string, notebookId: string | null) => Promise<void> | void;
   onCreateNotebook: (input: {
     name: string;
     parentId: string | null;
@@ -61,6 +68,8 @@ export interface NotesExplorerProps {
   onRenameNotebook: (id: string, name: string) => Promise<void>;
   onColorNotebook: (id: string, color: string | null) => Promise<void>;
   onDeleteNotebook: (id: string) => Promise<void>;
+  /** Re-parent a notebook (null = move to top level). */
+  onMoveNotebook: (id: string, parentId: string | null) => Promise<void>;
   tags: Tag[];
   activeTag: string | null;
   onTagChange: (tag: string | null) => void;
@@ -137,6 +146,29 @@ function persistExpanded(ids: Set<string>): void {
   }
 }
 
+/* -------------------- Drag & drop -------------------- */
+
+type DragRef = { kind: "note" | "folder"; id: string };
+type DropTarget = string | "root";
+
+interface NotesDnd {
+  drag: DragRef | null;
+  dropTarget: DropTarget | null;
+  begin: (ref: DragRef) => void;
+  end: () => void;
+  hover: (target: DropTarget | null) => void;
+  canDrop: (target: DropTarget) => boolean;
+  drop: (target: DropTarget) => void;
+}
+
+const DndContext = createContext<NotesDnd | null>(null);
+
+function useDnd(): NotesDnd {
+  const ctx = useContext(DndContext);
+  if (!ctx) throw new Error("useDnd must be used inside NotesExplorer");
+  return ctx;
+}
+
 export function NotesExplorer({
   notebooks,
   notes,
@@ -146,10 +178,13 @@ export function NotesExplorer({
   onSelectNote,
   onCreateNote,
   onDeleteNote,
+  onTogglePinNote,
+  onMoveNote,
   onCreateNotebook,
   onRenameNotebook,
   onColorNotebook,
   onDeleteNotebook,
+  onMoveNotebook,
   tags,
   activeTag,
   onTagChange,
@@ -219,6 +254,88 @@ export function NotesExplorer({
     });
   };
 
+  /* ---- drag & drop wiring ---- */
+  const [drag, setDrag] = useState<DragRef | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+
+  const notebookById = useMemo(
+    () => new Map(notebooks.map((n) => [n.id, n])),
+    [notebooks],
+  );
+  const noteById = useMemo(() => new Map(notes.map((n) => [n.id, n])), [notes]);
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const nb of notebooks) {
+      if (!nb.parentId) continue;
+      const bucket = map.get(nb.parentId);
+      if (bucket) bucket.push(nb.id);
+      else map.set(nb.parentId, [nb.id]);
+    }
+    return map;
+  }, [notebooks]);
+
+  const descendantsOf = useCallback(
+    (rootId: string): Set<string> => {
+      const out = new Set<string>();
+      const stack = [...(childrenByParent.get(rootId) ?? [])];
+      while (stack.length) {
+        const id = stack.pop() as string;
+        if (out.has(id)) continue;
+        out.add(id);
+        const kids = childrenByParent.get(id);
+        if (kids) stack.push(...kids);
+      }
+      return out;
+    },
+    [childrenByParent],
+  );
+
+  const canDrop = useCallback(
+    (target: DropTarget): boolean => {
+      if (!drag) return false;
+      if (drag.kind === "folder") {
+        if (target === "root")
+          return notebookById.get(drag.id)?.parentId != null;
+        if (target === drag.id) return false;
+        if (descendantsOf(drag.id).has(target)) return false;
+        return notebookById.get(drag.id)?.parentId !== target;
+      }
+      const current = noteById.get(drag.id)?.notebookId ?? null;
+      return current !== (target === "root" ? null : target);
+    },
+    [drag, descendantsOf, notebookById, noteById],
+  );
+
+  const commitDrop = useCallback(
+    (target: DropTarget): void => {
+      const active = drag;
+      setDrag(null);
+      setDropTarget(null);
+      if (!active || !canDrop(target)) return;
+      const parentId = target === "root" ? null : target;
+      if (active.kind === "folder") void onMoveNotebook(active.id, parentId);
+      else void onMoveNote(active.id, parentId);
+      if (parentId) expandAncestors(parentId);
+    },
+    [drag, canDrop, onMoveNotebook, onMoveNote, expandAncestors],
+  );
+
+  const dnd: NotesDnd = useMemo(
+    () => ({
+      drag,
+      dropTarget,
+      begin: setDrag,
+      end: () => {
+        setDrag(null);
+        setDropTarget(null);
+      },
+      hover: setDropTarget,
+      canDrop,
+      drop: commitDrop,
+    }),
+    [drag, dropTarget, canDrop, commitDrop],
+  );
+
   const handleCreateFolder = async (
     name: string,
     parentId: string | null,
@@ -257,6 +374,7 @@ export function NotesExplorer({
   };
 
   return (
+    <DndContext.Provider value={dnd}>
     <div className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
       <header className="border-b border-sidebar-border">
         <div className="flex items-center gap-1 px-3 pb-1 pt-3">
@@ -284,35 +402,37 @@ export function NotesExplorer({
           </div>
         </div>
 
-        <div className="relative px-3 pb-3 pt-1">
-          <Search className="pointer-events-none absolute left-5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Tìm ghi chú…"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => onSearchChange("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="Xóa"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="px-3 pb-3 pt-1">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Tìm ghi chú…"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => onSearchChange("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Xóa"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {activeTag && (
           <div className="flex items-center gap-1 border-t border-sidebar-border px-3 py-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs text-accent-foreground">
-              #{activeTag}
+            <span className="inline-flex h-6 items-center gap-1 rounded-full bg-accent px-2 text-xs leading-none text-accent-foreground">
+              <span className="leading-trim">#{activeTag}</span>
               <button
                 type="button"
                 onClick={() => onTagChange(null)}
                 aria-label="Xóa lọc"
-                className="text-accent-foreground/70 hover:text-accent-foreground"
+                className="inline-flex shrink-0 text-accent-foreground/70 hover:text-accent-foreground"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -321,7 +441,25 @@ export function NotesExplorer({
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-1 py-2">
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto scrollbar-thin px-1 py-2",
+          drag &&
+            dropTarget === "root" &&
+            canDrop("root") &&
+            "rounded-md ring-1 ring-inset ring-primary/40",
+        )}
+        onDragOver={(e) => {
+          if (!canDrop("root")) return;
+          e.preventDefault();
+          dnd.hover("root");
+        }}
+        onDrop={(e) => {
+          if (!canDrop("root")) return;
+          e.preventDefault();
+          dnd.drop("root");
+        }}
+      >
         {isLoading && (
           <div className="space-y-1.5 px-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -363,6 +501,7 @@ export function NotesExplorer({
                 onSelectNote={onSelectNote}
                 onRequestCreateNote={onCreateNote}
                 onRequestDeleteNote={handleDeleteNote}
+                onRequestTogglePinNote={onTogglePinNote}
               />
             ))}
 
@@ -383,6 +522,7 @@ export function NotesExplorer({
                 selected={note.id === selectedNoteId}
                 onSelect={() => onSelectNote(note.id)}
                 onDelete={() => void handleDeleteNote(note)}
+                onTogglePin={() => void onTogglePinNote(note)}
               />
             ))}
 
@@ -397,6 +537,7 @@ export function NotesExplorer({
         )}
       </div>
     </div>
+    </DndContext.Provider>
   );
 }
 
@@ -423,6 +564,7 @@ interface FolderRowProps {
   onSelectNote: (id: string) => void;
   onRequestCreateNote: (notebookId: string | null) => Promise<void> | void;
   onRequestDeleteNote: (note: NoteSummary) => Promise<void>;
+  onRequestTogglePinNote: (note: NoteSummary) => Promise<void> | void;
 }
 
 function FolderRow({
@@ -445,7 +587,9 @@ function FolderRow({
   onSelectNote,
   onRequestCreateNote,
   onRequestDeleteNote,
+  onRequestTogglePinNote,
 }: FolderRowProps) {
+  const dnd = useDnd();
   const { notebook } = node;
   const childNotes = notesByNotebook.get(notebook.id) ?? [];
   const hasChildren = node.children.length > 0;
@@ -455,11 +599,35 @@ function FolderRow({
   const showChildCreator = creatingUnder === notebook.id;
   const indent = depth * 12;
 
+  const isDragging = dnd.drag?.kind === "folder" && dnd.drag.id === notebook.id;
+  const isDropTarget =
+    dnd.dropTarget === notebook.id && dnd.canDrop(notebook.id);
+
   return (
     <li>
       <div
+        draggable={!isEditing}
+        onDragStart={(e: DragEvent) => {
+          e.dataTransfer.effectAllowed = "move";
+          dnd.begin({ kind: "folder", id: notebook.id });
+        }}
+        onDragEnd={dnd.end}
+        onDragOver={(e: DragEvent) => {
+          if (!dnd.canDrop(notebook.id)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          dnd.hover(notebook.id);
+        }}
+        onDrop={(e: DragEvent) => {
+          if (!dnd.canDrop(notebook.id)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          dnd.drop(notebook.id);
+        }}
         className={cn(
           "group/row relative flex items-center rounded-md text-sm transition-colors hover:bg-muted/60",
+          isDragging && "opacity-40",
+          isDropTarget && "bg-accent ring-1 ring-inset ring-primary/60",
         )}
         style={{ paddingLeft: indent }}
       >
@@ -553,6 +721,7 @@ function FolderRow({
               onSelectNote={onSelectNote}
               onRequestCreateNote={onRequestCreateNote}
               onRequestDeleteNote={onRequestDeleteNote}
+              onRequestTogglePinNote={onRequestTogglePinNote}
             />
           ))}
 
@@ -573,6 +742,7 @@ function FolderRow({
               selected={note.id === selectedNoteId}
               onSelect={() => onSelectNote(note.id)}
               onDelete={() => void onRequestDeleteNote(note)}
+              onTogglePin={() => void onRequestTogglePinNote(note)}
             />
           ))}
 
@@ -596,19 +766,57 @@ interface NoteRowProps {
   selected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onTogglePin: () => void;
 }
 
-function NoteRow({ note, depth, selected, onSelect, onDelete }: NoteRowProps) {
+function NoteRow({
+  note,
+  depth,
+  selected,
+  onSelect,
+  onDelete,
+  onTogglePin,
+}: NoteRowProps) {
+  const dnd = useDnd();
   const indent = depth * 12;
   const title = note.title || "Chưa có tiêu đề";
+  const isDragging = dnd.drag?.kind === "note" && dnd.drag.id === note.id;
+
+  // Dropping a note onto another note targets that note's own notebook, never
+  // the root container. This stops a small accidental drag-and-release near the
+  // origin from bubbling up to the root drop zone and yanking the note out of
+  // its folder. Folder drags are left to bubble (existing behaviour).
+  const noteTarget: DropTarget = note.notebookId ?? "root";
+
   return (
     <li>
       <div
+        draggable
+        onDragStart={(e: DragEvent) => {
+          e.dataTransfer.effectAllowed = "move";
+          dnd.begin({ kind: "note", id: note.id });
+        }}
+        onDragEnd={dnd.end}
+        onDragOver={(e: DragEvent) => {
+          if (dnd.drag?.kind !== "note") return;
+          if (!dnd.canDrop(noteTarget)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          dnd.hover(noteTarget);
+        }}
+        onDrop={(e: DragEvent) => {
+          if (dnd.drag?.kind !== "note") return;
+          if (!dnd.canDrop(noteTarget)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          dnd.drop(noteTarget);
+        }}
         className={cn(
-          "group/row relative flex items-start rounded-md text-sm transition-colors",
+          "group/row relative flex items-center rounded-md text-sm transition-colors",
           selected
             ? "bg-accent text-accent-foreground"
             : "text-foreground hover:bg-muted/60",
+          isDragging && "opacity-40",
         )}
         style={{ paddingLeft: indent }}
       >
@@ -623,37 +831,38 @@ function NoteRow({ note, depth, selected, onSelect, onDelete }: NoteRowProps) {
         >
           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-xs">{title}</span>
-          {note.isPinned && (
-            <Pin
-              className="h-3 w-3 shrink-0 text-dot-orange"
-              aria-label="Đã ghim"
-            />
-          )}
         </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Tùy chọn ghi chú"
-              className="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onSelect={onSelect}>
-              <FileText className="h-3.5 w-3.5" /> Mở ghi chú
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={onDelete}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Xoá
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mr-1 flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            aria-label={note.isPinned ? "Bỏ ghim" : "Ghim"}
+            title={note.isPinned ? "Bỏ ghim" : "Ghim"}
+            className={cn(
+              "inline-flex h-6 w-6 items-center justify-center rounded transition-opacity hover:bg-background",
+              note.isPinned
+                ? "text-dot-orange opacity-100"
+                : "text-muted-foreground opacity-0 hover:text-foreground focus:opacity-100 group-hover/row:opacity-100",
+            )}
+          >
+            <Pin className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            aria-label="Xoá ghi chú"
+            title="Xoá"
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover/row:opacity-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </li>
   );
