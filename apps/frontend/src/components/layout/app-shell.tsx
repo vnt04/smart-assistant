@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronsLeft,
   ChevronsRight,
+  Languages,
   LogOut,
   Menu,
   Moon,
@@ -50,6 +51,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/notes", label: "Notes", icon: StickyNote, dot: "yellow" },
+  { to: "/vocab", label: "Vocab", icon: Languages, dot: "cyan" },
   { to: "/schedule", label: "Lịch", icon: CalendarDays, dot: "blue" },
   { to: "/expense", label: "Chi tiêu", icon: Wallet, dot: "green" },
   { to: "/assistant", label: "Trợ lý", icon: Sparkles, dot: "purple" },

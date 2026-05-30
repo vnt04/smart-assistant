@@ -17,6 +17,7 @@ import { NotesPage } from "./pages/NotesPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SchedulePage } from "./pages/SchedulePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { VocabPage } from "./pages/VocabPage";
 import { GoogleCallbackPage } from "./pages/GoogleCallbackPage";
 
 const PUBLIC_PATHS = ["/login", "/register", "/auth/callback"];
@@ -97,6 +98,12 @@ const notesRoute = new Route({
   }),
 });
 
+const vocabRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/vocab",
+  component: VocabPage,
+});
+
 const scheduleRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/schedule",
@@ -132,6 +139,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
   notesRoute,
+  vocabRoute,
   scheduleRoute,
   expenseRoute,
   assistantRoute,

@@ -15,6 +15,7 @@ import { NotesModule } from "./notes/notes.module";
 import { ScheduleModule } from "./schedule/schedule.module";
 import { SettingsModule } from "./settings/settings.module";
 import { UsersModule } from "./users/users.module";
+import { VocabModule } from "./vocab/vocab.module";
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { UsersModule } from "./users/users.module";
     ScheduleModule,
     ExpenseModule,
     AiModule,
+    VocabModule,
     HealthModule,
   ],
 })

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CalendarDays,
   CircleCheck,
+  Languages,
   Sparkles,
   StickyNote,
   Wallet,
@@ -27,6 +28,13 @@ const LINKS: QuickLink[] = [
     description: "Ghi chú, ý tưởng, danh sách công việc",
     icon: StickyNote,
     accent: "bg-dot-yellow/10 text-dot-yellow",
+  },
+  {
+    to: "/vocab",
+    label: "Vocab",
+    description: "Từ vựng hay quên, ôn tập theo tần suất",
+    icon: Languages,
+    accent: "bg-dot-cyan/10 text-dot-cyan",
   },
   {
     to: "/schedule",

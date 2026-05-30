@@ -19,6 +19,7 @@ import { BudgetEntity } from "../expense/entities/budget.entity";
 import { AiConversationEntity } from "../ai/entities/ai-conversation.entity";
 import { AiMessageEntity } from "../ai/entities/ai-message.entity";
 import { AiToolCallEntity } from "../ai/entities/ai-tool-call.entity";
+import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
 
 // Loaded by the typeorm CLI; in app runtime ConfigModule handles env.
 // Resolve from monorepo root so the CLI works regardless of cwd.
@@ -57,6 +58,7 @@ const dataSource = new DataSource({
     AiConversationEntity,
     AiMessageEntity,
     AiToolCallEntity,
+    VocabItemEntity,
   ],
   migrations: [
     isCompiled

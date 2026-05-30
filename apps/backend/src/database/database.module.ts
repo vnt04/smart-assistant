@@ -15,6 +15,7 @@ import { WalletEntity } from "../expense/entities/wallet.entity";
 import { CategoryEntity } from "../expense/entities/category.entity";
 import { TransactionEntity } from "../expense/entities/transaction.entity";
 import { BudgetEntity } from "../expense/entities/budget.entity";
+import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { BudgetEntity } from "../expense/entities/budget.entity";
           CategoryEntity,
           TransactionEntity,
           BudgetEntity,
+          VocabItemEntity,
         ],
         logging:
           config.get<string>("NODE_ENV") === "development"

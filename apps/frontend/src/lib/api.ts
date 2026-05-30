@@ -23,6 +23,7 @@ import {
   trendResponseSchema,
   userProfileSchema,
   userSettingsSchema,
+  vocabListResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -79,6 +80,7 @@ import {
   type UpdateWalletInput,
   type UserProfile,
   type UserSettings,
+  type VocabItem,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -586,6 +588,10 @@ export const api = {
     }
     return res.blob();
   },
+
+  // Vocab (public endpoint — no auth required)
+  listVocab: async (): Promise<VocabItem[]> =>
+    vocabListResponseSchema.parse(await request("/vocab", { auth: false })),
 };
 
 function toQuery(query: Record<string, unknown>): string {
