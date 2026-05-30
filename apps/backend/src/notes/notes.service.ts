@@ -18,6 +18,26 @@ import { TagEntity } from "./entities/tag.entity";
 import { excerpt, htmlToText } from "./util/html-to-text";
 
 const FT_MIN_TOKEN = 2;
+// Số ký tự content_text lấy từ DB để dựng excerpt. Phải >= excerpt() max (200)
+// cộng dư một ít cho phần trimEnd; KHÔNG kéo cả MEDIUMTEXT về.
+const EXCERPT_SOURCE_LEN = 300;
+
+interface NoteSummaryRow {
+  id: string;
+  notebookId: string | null;
+  title: string;
+  isPinned: number | boolean;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+  excerptSource: string | null;
+}
+
+interface TagRow {
+  noteId: string;
+  id: string;
+  name: string;
+  createdAt: Date | string;
+}
 
 @Injectable()
 export class NotesService {
@@ -32,13 +52,14 @@ export class NotesService {
     userId: string,
     query: NoteListQuery,
   ): Promise<NoteListResponse> {
-    const qb = this.notes
+    // Base chỉ chứa filter (user/notebook/tag/pinned/search), chưa join tags
+    // và chưa chọn cột — dùng lại cho cả count lẫn query trang.
+    const base = this.notes
       .createQueryBuilder("n")
-      .leftJoinAndSelect("n.tags", "tag")
       .where("n.user_id = :userId", { userId });
 
     if (query.notebookId === "none") {
-      qb.andWhere("n.notebook_id IS NULL");
+      base.andWhere("n.notebook_id IS NULL");
     } else if (query.notebookId) {
       if (query.includeChildren) {
         const ids = await this.notebooks.descendantIds(
@@ -46,17 +67,17 @@ export class NotesService {
           query.notebookId,
         );
         if (ids.length === 0) {
-          qb.andWhere("1 = 0");
+          base.andWhere("1 = 0");
         } else {
-          qb.andWhere("n.notebook_id IN (:...nbIds)", { nbIds: ids });
+          base.andWhere("n.notebook_id IN (:...nbIds)", { nbIds: ids });
         }
       } else {
-        qb.andWhere("n.notebook_id = :nbId", { nbId: query.notebookId });
+        base.andWhere("n.notebook_id = :nbId", { nbId: query.notebookId });
       }
     }
 
     if (query.tag) {
-      qb.andWhere((sub) => {
+      base.andWhere((sub) => {
         const subQuery = sub
           .subQuery()
           .select("nt.note_id")
@@ -70,11 +91,11 @@ export class NotesService {
     }
 
     if (query.pinned !== undefined) {
-      qb.andWhere("n.is_pinned = :pinned", { pinned: query.pinned ? 1 : 0 });
+      base.andWhere("n.is_pinned = :pinned", { pinned: query.pinned ? 1 : 0 });
     }
 
     if (query.q && query.q.length >= FT_MIN_TOKEN) {
-      qb.andWhere(
+      base.andWhere(
         "(MATCH(n.title, n.content_text) AGAINST (:ftQuery IN BOOLEAN MODE) OR n.title LIKE :likeQuery OR n.content_text LIKE :likeQuery)",
         {
           ftQuery: toBooleanQuery(query.q),
@@ -82,27 +103,43 @@ export class NotesService {
         },
       );
     } else if (query.q) {
-      qb.andWhere("(n.title LIKE :likeQuery OR n.content_text LIKE :likeQuery)", {
-        likeQuery: `%${escapeLike(query.q)}%`,
-      });
+      base.andWhere(
+        "(n.title LIKE :likeQuery OR n.content_text LIKE :likeQuery)",
+        { likeQuery: `%${escapeLike(query.q)}%` },
+      );
     }
 
-    qb.orderBy("n.isPinned", "DESC")
-      .addOrderBy("n.updatedAt", "DESC")
-      .skip((query.page - 1) * query.limit)
-      .take(query.limit);
+    const total = await base.clone().getCount();
 
-    const [rows, total] = await qb.getManyAndCount();
+    // Chỉ lấy metadata + đoạn đầu của content_text cho excerpt.
+    // KHÔNG select content_html / content_text đầy đủ (cả hai là MEDIUMTEXT)
+    // để query danh sách không phải kéo blob lớn về backend.
+    const rows = await base
+      .clone()
+      .select("n.id", "id")
+      .addSelect("n.notebookId", "notebookId")
+      .addSelect("n.title", "title")
+      .addSelect("n.isPinned", "isPinned")
+      .addSelect("n.createdAt", "createdAt")
+      .addSelect("n.updatedAt", "updatedAt")
+      .addSelect(`LEFT(n.content_text, ${EXCERPT_SOURCE_LEN})`, "excerptSource")
+      .orderBy("n.is_pinned", "DESC")
+      .addOrderBy("n.updated_at", "DESC")
+      .offset((query.page - 1) * query.limit)
+      .limit(query.limit)
+      .getRawMany<NoteSummaryRow>();
+
+    const tagsByNote = await this.loadTagsByNote(rows.map((row) => row.id));
 
     const items: NoteSummary[] = rows.map((row) => ({
       id: row.id,
-      notebookId: row.notebookId,
+      notebookId: row.notebookId ?? null,
       title: row.title,
-      excerpt: excerpt(row.contentText ?? ""),
+      excerpt: excerpt(row.excerptSource ?? ""),
       isPinned: Boolean(row.isPinned),
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      tags: (row.tags ?? []).map(tagToDto),
+      createdAt: toIso(row.createdAt),
+      updatedAt: toIso(row.updatedAt),
+      tags: tagsByNote.get(row.id) ?? [],
     }));
 
     return {
@@ -114,6 +151,35 @@ export class NotesService {
         totalPages: Math.max(1, Math.ceil(total / query.limit)),
       },
     };
+  }
+
+  // Load tags cho đúng các note trong trang bằng một query nhẹ (chỉ cột tag),
+  // tránh JOIN tags vào query chính (gây nhân dòng + rắc rối phân trang) và
+  // tránh đụng tới các cột content lớn của bảng notes.
+  private async loadTagsByNote(
+    noteIds: string[],
+  ): Promise<Map<string, Tag[]>> {
+    const byNote = new Map<string, Tag[]>();
+    if (noteIds.length === 0) return byNote;
+
+    const rows = await this.notes.manager
+      .createQueryBuilder()
+      .select("nt.note_id", "noteId")
+      .addSelect("t.id", "id")
+      .addSelect("t.name", "name")
+      .addSelect("t.created_at", "createdAt")
+      .from("note_tags", "nt")
+      .innerJoin(TagEntity, "t", "t.id = nt.tag_id")
+      .where("nt.note_id IN (:...noteIds)", { noteIds })
+      .orderBy("t.name", "ASC")
+      .getRawMany<TagRow>();
+
+    for (const row of rows) {
+      const list = byNote.get(row.noteId) ?? [];
+      list.push({ id: row.id, name: row.name, createdAt: toIso(row.createdAt) });
+      byNote.set(row.noteId, list);
+    }
+    return byNote;
   }
 
   async findOne(userId: string, id: string): Promise<Note> {
@@ -212,6 +278,10 @@ export class NotesService {
     }
     await this.notes.remove(row);
   }
+}
+
+function toIso(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function tagToDto(t: TagEntity): Tag {
