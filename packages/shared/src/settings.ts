@@ -13,6 +13,8 @@ export const userSettingsSchema = z.object({
   telegramChatId: z.string().nullable(),
   theme: themeSchema,
   defaultWalletId: z.string().uuid().nullable(),
+  // Đã đặt mật khẩu khóa ghi chú hay chưa. KHÔNG bao giờ lộ hash mật khẩu.
+  hasNotesLock: z.boolean(),
 });
 export type UserSettings = z.infer<typeof userSettingsSchema>;
 
@@ -31,3 +33,25 @@ export const updateSettingsInputSchema = z
   })
   .strict();
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;
+
+const notesLockPasswordSchema = z
+  .string()
+  .min(4, "Mật khẩu khóa tối thiểu 4 ký tự")
+  .max(128, "Mật khẩu khóa tối đa 128 ký tự");
+
+// Đặt mới (lần đầu, không cần currentPassword) hoặc đổi (cần currentPassword đúng).
+export const setNotesLockInputSchema = z
+  .object({
+    currentPassword: z.string().min(1).optional(),
+    newPassword: notesLockPasswordSchema,
+  })
+  .strict();
+export type SetNotesLockInput = z.infer<typeof setNotesLockInputSchema>;
+
+// Dùng chung cho: reveal note / unlock note / unlock notebook / xóa mật khẩu khóa.
+export const verifyNotesLockInputSchema = z
+  .object({
+    password: z.string().min(1, "Vui lòng nhập mật khẩu"),
+  })
+  .strict();
+export type VerifyNotesLockInput = z.infer<typeof verifyNotesLockInputSchema>;

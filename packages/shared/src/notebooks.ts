@@ -10,6 +10,9 @@ export const notebookSchema = z.object({
   parentId: idSchema.nullable(),
   name: z.string().min(1).max(120),
   color: colorHexSchema.nullable(),
+  // Cờ khóa RIÊNG của notebook. Khóa lan xuống (cascade) được tính ở client +
+  // enforce ở server, không materialize trên từng note/notebook con.
+  isLocked: z.boolean(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });

@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { SettingsModule } from "../settings/settings.module";
 import { AttachmentsController } from "./attachments.controller";
 import { AttachmentsService } from "./attachments.service";
 import { AttachmentEntity } from "./entities/attachment.entity";
@@ -21,6 +22,7 @@ import { TagsService } from "./tags.service";
       TagEntity,
       AttachmentEntity,
     ]),
+    SettingsModule,
   ],
   controllers: [
     NotebooksController,

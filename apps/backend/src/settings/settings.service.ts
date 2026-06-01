@@ -1,9 +1,20 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import * as bcrypt from "bcrypt";
 import { Repository } from "typeorm";
-import type { UpdateSettingsInput, UserSettings } from "@assistant/shared";
+import type {
+  SetNotesLockInput,
+  UpdateSettingsInput,
+  UserSettings,
+} from "@assistant/shared";
 import { CryptoService } from "../common/crypto/crypto.service";
 import { UserSettingsEntity } from "./user-settings.entity";
+
+const BCRYPT_COST = 12;
 
 @Injectable()
 export class SettingsService {
@@ -67,6 +78,97 @@ export class SettingsService {
     return this.toDto(saved);
   }
 
+  /* -------------------- Notes lock password -------------------- */
+
+  async hasNotesLock(userId: string): Promise<boolean> {
+    const entity = await this.repo.findOne({
+      where: { userId },
+      select: ["userId", "notesLockHash"],
+    });
+    return Boolean(entity?.notesLockHash);
+  }
+
+  /**
+   * Đặt mới (lần đầu) hoặc đổi mật khẩu khóa. Nếu đã có hash thì bắt buộc
+   * currentPassword đúng. Trả về UserSettings sau khi cập nhật.
+   */
+  async setNotesLock(
+    userId: string,
+    input: SetNotesLockInput,
+  ): Promise<UserSettings> {
+    const entity =
+      (await this.repo.findOne({ where: { userId } })) ??
+      (await this.initForUser(userId));
+
+    if (entity.notesLockHash) {
+      const ok =
+        input.currentPassword != null &&
+        (await bcrypt.compare(input.currentPassword, entity.notesLockHash));
+      if (!ok) {
+        throw new UnauthorizedException({
+          code: "notes_lock_invalid",
+          message: "Mật khẩu hiện tại không đúng",
+        });
+      }
+    }
+
+    entity.notesLockHash = await bcrypt.hash(input.newPassword, BCRYPT_COST);
+    const saved = await this.repo.save(entity);
+    return this.toDto(saved);
+  }
+
+  async verifyNotesLock(userId: string, password: string): Promise<boolean> {
+    const entity = await this.repo.findOne({
+      where: { userId },
+      select: ["userId", "notesLockHash"],
+    });
+    if (!entity?.notesLockHash) return false;
+    return bcrypt.compare(password, entity.notesLockHash);
+  }
+
+  /** Xác minh mật khẩu khóa, sai thì ném 401 với thông điệp đồng nhất. */
+  async requireNotesLock(userId: string, password: string): Promise<void> {
+    const ok = await this.verifyNotesLock(userId, password);
+    if (!ok) {
+      throw new UnauthorizedException({
+        code: "notes_lock_invalid",
+        message: "Mật khẩu không đúng",
+      });
+    }
+  }
+
+  /**
+   * Xóa mật khẩu khóa. Bắt buộc mở khóa toàn bộ note/notebook của user — nếu
+   * không, các mục đã khóa sẽ vĩnh viễn không mở được vì không còn mật khẩu.
+   */
+  async clearNotesLock(
+    userId: string,
+    password: string,
+  ): Promise<UserSettings> {
+    const entity = await this.repo.findOne({ where: { userId } });
+    if (!entity) {
+      throw new NotFoundException({
+        code: "settings_not_found",
+        message: "Không tìm thấy settings",
+      });
+    }
+    await this.requireNotesLock(userId, password);
+
+    entity.notesLockHash = null;
+    const saved = await this.repo.save(entity);
+
+    await this.repo.manager.query(
+      `UPDATE notes SET is_locked = 0 WHERE user_id = ?`,
+      [userId],
+    );
+    await this.repo.manager.query(
+      `UPDATE notebooks SET is_locked = 0 WHERE user_id = ?`,
+      [userId],
+    );
+
+    return this.toDto(saved);
+  }
+
   async decryptAiApiKey(userId: string): Promise<string | null> {
     const entity = await this.repo.findOne({ where: { userId } });
     if (!entity?.aiApiKeyEnc) return null;
@@ -91,6 +193,7 @@ export class SettingsService {
       telegramChatId: entity.telegramChatId,
       theme: entity.theme,
       defaultWalletId: entity.defaultWalletId,
+      hasNotesLock: entity.notesLockHash != null,
     };
   }
 }

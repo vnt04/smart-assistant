@@ -16,11 +16,13 @@ import {
   createNoteInputSchema,
   noteListQuerySchema,
   updateNoteInputSchema,
+  verifyNotesLockInputSchema,
   type CreateNoteInput,
   type Note,
   type NoteListQuery,
   type NoteListResponse,
   type UpdateNoteInput,
+  type VerifyNotesLockInput,
 } from "@assistant/shared";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -76,5 +78,36 @@ export class NotesController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     await this.svc.remove(user.id, id);
+  }
+
+  @Post(":id/lock")
+  @HttpCode(HttpStatus.OK)
+  lock(
+    @CurrentUser() user: UserEntity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<Note> {
+    return this.svc.lock(user.id, id);
+  }
+
+  @Post(":id/unlock")
+  @HttpCode(HttpStatus.OK)
+  unlock(
+    @CurrentUser() user: UserEntity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(verifyNotesLockInputSchema))
+    input: VerifyNotesLockInput,
+  ): Promise<Note> {
+    return this.svc.unlock(user.id, id, input.password);
+  }
+
+  @Post(":id/reveal")
+  @HttpCode(HttpStatus.OK)
+  reveal(
+    @CurrentUser() user: UserEntity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(verifyNotesLockInputSchema))
+    input: VerifyNotesLockInput,
+  ): Promise<Note> {
+    return this.svc.reveal(user.id, id, input.password);
   }
 }

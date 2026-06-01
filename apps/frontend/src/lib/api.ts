@@ -60,6 +60,7 @@ import {
   type RegisterInput,
   type Reminder,
   type SendAiMessageInput,
+  type SetNotesLockInput,
   type Tag,
   type Task,
   type TaskListQuery,
@@ -233,6 +234,24 @@ export const api = {
       await request("/auth/settings", { method: "PATCH", body: input }),
     ),
 
+  // Đặt/đổi mật khẩu khóa ghi chú
+  setNotesLock: async (input: SetNotesLockInput): Promise<UserSettings> =>
+    userSettingsSchema.parse(
+      await request("/auth/settings/notes-lock", {
+        method: "POST",
+        body: input,
+      }),
+    ),
+
+  // Xóa mật khẩu khóa (mở khóa toàn bộ note/notebook)
+  removeNotesLock: async (password: string): Promise<UserSettings> =>
+    userSettingsSchema.parse(
+      await request("/auth/settings/notes-lock", {
+        method: "DELETE",
+        body: { password },
+      }),
+    ),
+
   // Notebooks
   listNotebooks: async (): Promise<Notebook[]> =>
     z.array(notebookSchema).parse(await request("/notebooks")),
@@ -252,6 +271,19 @@ export const api = {
 
   deleteNotebook: async (id: string): Promise<void> =>
     request(`/notebooks/${id}`, { method: "DELETE" }),
+
+  lockNotebook: async (id: string): Promise<Notebook> =>
+    notebookSchema.parse(
+      await request(`/notebooks/${id}/lock`, { method: "POST" }),
+    ),
+
+  unlockNotebook: async (id: string, password: string): Promise<Notebook> =>
+    notebookSchema.parse(
+      await request(`/notebooks/${id}/unlock`, {
+        method: "POST",
+        body: { password },
+      }),
+    ),
 
   // Tags
   listTags: async (): Promise<Tag[]> =>
@@ -292,6 +324,26 @@ export const api = {
 
   deleteNote: async (id: string): Promise<void> =>
     request(`/notes/${id}`, { method: "DELETE" }),
+
+  // Notes lock — khóa, mở khóa (bỏ cờ khóa), reveal (xem 1 lần, không đổi cờ)
+  lockNote: async (id: string): Promise<Note> =>
+    noteSchema.parse(await request(`/notes/${id}/lock`, { method: "POST" })),
+
+  unlockNote: async (id: string, password: string): Promise<Note> =>
+    noteSchema.parse(
+      await request(`/notes/${id}/unlock`, {
+        method: "POST",
+        body: { password },
+      }),
+    ),
+
+  revealNote: async (id: string, password: string): Promise<Note> =>
+    noteSchema.parse(
+      await request(`/notes/${id}/reveal`, {
+        method: "POST",
+        body: { password },
+      }),
+    ),
 
   // Attachments
   uploadAttachment: async (

@@ -14,9 +14,11 @@ import {
 import {
   createNotebookInputSchema,
   updateNotebookInputSchema,
+  verifyNotesLockInputSchema,
   type CreateNotebookInput,
   type Notebook,
   type UpdateNotebookInput,
+  type VerifyNotesLockInput,
 } from "@assistant/shared";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -61,5 +63,25 @@ export class NotebooksController {
     @Param("id", new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     await this.svc.remove(user.id, id);
+  }
+
+  @Post(":id/lock")
+  @HttpCode(HttpStatus.OK)
+  lock(
+    @CurrentUser() user: UserEntity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+  ): Promise<Notebook> {
+    return this.svc.lock(user.id, id);
+  }
+
+  @Post(":id/unlock")
+  @HttpCode(HttpStatus.OK)
+  unlock(
+    @CurrentUser() user: UserEntity,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(verifyNotesLockInputSchema))
+    input: VerifyNotesLockInput,
+  ): Promise<Notebook> {
+    return this.svc.unlock(user.id, id, input.password);
   }
 }

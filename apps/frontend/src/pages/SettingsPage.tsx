@@ -9,9 +9,11 @@ import {
   type UpdateSettingsInput,
   type UserSettings,
 } from "@assistant/shared";
+import { Lock } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { useConfirm } from "../components/ui/confirm-dialog";
 import { api, ApiError } from "../lib/api";
 
 export function SettingsPage() {
@@ -31,11 +33,173 @@ export function SettingsPage() {
       </header>
       {isLoading && <p className="text-muted-foreground">Đang tải…</p>}
       {data && (
-        <SettingsForm
-          initial={data}
-          onSaved={(s) => queryClient.setQueryData<UserSettings>(["settings"], s)}
-        />
+        <>
+          <SettingsForm
+            initial={data}
+            onSaved={(s) =>
+              queryClient.setQueryData<UserSettings>(["settings"], s)
+            }
+          />
+          <NotesLockSection
+            initial={data}
+            onSaved={(s) =>
+              queryClient.setQueryData<UserSettings>(["settings"], s)
+            }
+          />
+        </>
       )}
+    </section>
+  );
+}
+
+interface NotesLockSectionProps {
+  initial: UserSettings;
+  onSaved: (s: UserSettings) => void;
+}
+
+function NotesLockSection({ initial, onSaved }: NotesLockSectionProps) {
+  const confirm = useConfirm();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = (): void => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setError(null);
+  };
+
+  const setMut = useMutation({
+    mutationFn: api.setNotesLock,
+    onSuccess: (s) => {
+      reset();
+      onSaved(s);
+    },
+    onError: (e: unknown) =>
+      setError(e instanceof ApiError ? e.message : "Lưu thất bại"),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: (password: string) => api.removeNotesLock(password),
+    onSuccess: (s) => {
+      reset();
+      onSaved(s);
+    },
+    onError: (e: unknown) =>
+      setError(e instanceof ApiError ? e.message : "Xóa thất bại"),
+  });
+
+  const onSubmit = (e: FormEvent): void => {
+    e.preventDefault();
+    setError(null);
+    if (newPassword.length < 4) {
+      setError("Mật khẩu khóa tối thiểu 4 ký tự");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Mật khẩu nhập lại không khớp");
+      return;
+    }
+    setMut.mutate(
+      initial.hasNotesLock ? { currentPassword, newPassword } : { newPassword },
+    );
+  };
+
+  const onRemove = async (): Promise<void> => {
+    setError(null);
+    if (!currentPassword) {
+      setError("Nhập mật khẩu hiện tại để xóa");
+      return;
+    }
+    const ok = await confirm({
+      title: "Xóa mật khẩu khóa?",
+      description:
+        "Toàn bộ ghi chú và thư mục đang khóa sẽ được mở khóa. Bạn có chắc chắn?",
+      confirmText: "Xóa mật khẩu",
+      variant: "destructive",
+    });
+    if (ok) removeMut.mutate(currentPassword);
+  };
+
+  const busy = setMut.isPending || removeMut.isPending;
+
+  return (
+    <section className="space-y-4 border-t border-border pt-6">
+      <header className="flex items-center gap-2">
+        <Lock className="h-4 w-4 text-muted-foreground" />
+        <div>
+          <h2 className="text-base font-semibold">Khóa ghi chú</h2>
+          <p className="text-sm text-muted-foreground">
+            {initial.hasNotesLock
+              ? "Đã đặt mật khẩu khóa. Có thể đổi hoặc xóa bên dưới."
+              : "Đặt một mật khẩu khóa để bảo vệ ghi chú và thư mục."}
+          </p>
+        </div>
+      </header>
+
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        {initial.hasNotesLock && (
+          <div className="space-y-1.5">
+            <Label htmlFor="currentNotesLock">Mật khẩu hiện tại</Label>
+            <Input
+              id="currentNotesLock"
+              type="password"
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="newNotesLock">
+            {initial.hasNotesLock ? "Mật khẩu mới" : "Mật khẩu khóa"}
+          </Label>
+          <Input
+            id="newNotesLock"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Tối thiểu 4 ký tự"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="confirmNotesLock">Nhập lại mật khẩu</Label>
+          <Input
+            id="confirmNotesLock"
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+        </div>
+
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={busy}>
+            {initial.hasNotesLock ? "Đổi mật khẩu" : "Đặt mật khẩu khóa"}
+          </Button>
+          {initial.hasNotesLock && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void onRemove()}
+            >
+              Xóa mật khẩu khóa
+            </Button>
+          )}
+        </div>
+      </form>
     </section>
   );
 }

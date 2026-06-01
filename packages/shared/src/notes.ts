@@ -21,6 +21,9 @@ export const noteSummarySchema = z.object({
   title: z.string(),
   excerpt: z.string(),
   isPinned: z.boolean(),
+  // Cờ khóa RIÊNG của note (không phải effective). Frontend tự tính khóa hiệu
+  // lực từ cây notebook; server enforce độc lập (ẩn excerpt/strip content).
+  isLocked: z.boolean(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
   tags: z.array(tagSchema),
@@ -34,6 +37,7 @@ export const noteSchema = z.object({
   contentHtml: z.string(),
   contentText: z.string(),
   isPinned: z.boolean(),
+  isLocked: z.boolean(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
   tags: z.array(tagSchema),

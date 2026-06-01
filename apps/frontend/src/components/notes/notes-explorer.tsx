@@ -16,6 +16,8 @@ import {
   FileText,
   FilePlus,
   FolderPlus,
+  Lock,
+  LockOpen,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -27,6 +29,10 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
+import {
+  isNoteEffectivelyLocked,
+  isNotebookEffectivelyLocked,
+} from "../../lib/note-lock";
 import { Input } from "../ui/input";
 import { useConfirm } from "../ui/confirm-dialog";
 import {
@@ -74,6 +80,10 @@ export interface NotesExplorerProps {
   activeTag: string | null;
   onTagChange: (tag: string | null) => void;
   isLoading?: boolean;
+  /** Notebook tra cứu theo id — để tính khóa hiệu lực (cascade) cho từng dòng. */
+  notebooksById: Map<string, Notebook>;
+  onLockNotebook: (id: string) => void;
+  onUnlockNotebook: (id: string) => void;
 }
 
 interface FolderNode {
@@ -189,6 +199,9 @@ export function NotesExplorer({
   activeTag,
   onTagChange,
   isLoading,
+  notebooksById,
+  onLockNotebook,
+  onUnlockNotebook,
 }: NotesExplorerProps) {
   const confirm = useConfirm();
   const folderTree = useMemo(() => buildFolderTree(notebooks), [notebooks]);
@@ -502,6 +515,9 @@ export function NotesExplorer({
                 onRequestCreateNote={onCreateNote}
                 onRequestDeleteNote={handleDeleteNote}
                 onRequestTogglePinNote={onTogglePinNote}
+                notebooksById={notebooksById}
+                onLockNotebook={onLockNotebook}
+                onUnlockNotebook={onUnlockNotebook}
               />
             ))}
 
@@ -520,6 +536,7 @@ export function NotesExplorer({
                 note={note}
                 depth={0}
                 selected={note.id === selectedNoteId}
+                locked={isNoteEffectivelyLocked(note, notebooksById)}
                 onSelect={() => onSelectNote(note.id)}
                 onDelete={() => void handleDeleteNote(note)}
                 onTogglePin={() => void onTogglePinNote(note)}
@@ -565,6 +582,9 @@ interface FolderRowProps {
   onRequestCreateNote: (notebookId: string | null) => Promise<void> | void;
   onRequestDeleteNote: (note: NoteSummary) => Promise<void>;
   onRequestTogglePinNote: (note: NoteSummary) => Promise<void> | void;
+  notebooksById: Map<string, Notebook>;
+  onLockNotebook: (id: string) => void;
+  onUnlockNotebook: (id: string) => void;
 }
 
 function FolderRow({
@@ -588,6 +608,9 @@ function FolderRow({
   onRequestCreateNote,
   onRequestDeleteNote,
   onRequestTogglePinNote,
+  notebooksById,
+  onLockNotebook,
+  onUnlockNotebook,
 }: FolderRowProps) {
   const dnd = useDnd();
   const { notebook } = node;
@@ -598,6 +621,10 @@ function FolderRow({
   const isEditing = editingId === notebook.id;
   const showChildCreator = creatingUnder === notebook.id;
   const indent = depth * 12;
+  // Cờ riêng quyết định icon "ổ khóa đặc" và nhãn menu; khóa hiệu lực (kể cả do
+  // cha bị khóa) chỉ để hiện icon mờ báo nội dung bên trong đang bị che.
+  const ownLocked = notebook.isLocked;
+  const effLocked = isNotebookEffectivelyLocked(notebook.id, notebooksById);
 
   const isDragging = dnd.drag?.kind === "folder" && dnd.drag.id === notebook.id;
   const isDropTarget =
@@ -672,6 +699,12 @@ function FolderRow({
             <span className="truncate text-xs font-medium">
               {notebook.name}
             </span>
+            {effLocked && (
+              <Lock
+                aria-label="Đã khóa"
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+              />
+            )}
           </button>
         )}
 
@@ -686,9 +719,12 @@ function FolderRow({
             </IconButton>
             <FolderMenu
               color={notebook.color}
+              isLocked={ownLocked}
               onRename={() => onStartEdit(notebook.id)}
               onCreateChild={() => onStartCreate(notebook.id)}
               onChangeColor={(c) => onChangeColor(notebook.id, c)}
+              onLock={() => onLockNotebook(notebook.id)}
+              onUnlock={() => onUnlockNotebook(notebook.id)}
               onDelete={() =>
                 void onRequestDeleteFolder(notebook, hasChildren)
               }
@@ -722,6 +758,9 @@ function FolderRow({
               onRequestCreateNote={onRequestCreateNote}
               onRequestDeleteNote={onRequestDeleteNote}
               onRequestTogglePinNote={onRequestTogglePinNote}
+              notebooksById={notebooksById}
+              onLockNotebook={onLockNotebook}
+              onUnlockNotebook={onUnlockNotebook}
             />
           ))}
 
@@ -740,6 +779,7 @@ function FolderRow({
               note={note}
               depth={depth + 1}
               selected={note.id === selectedNoteId}
+              locked={isNoteEffectivelyLocked(note, notebooksById)}
               onSelect={() => onSelectNote(note.id)}
               onDelete={() => void onRequestDeleteNote(note)}
               onTogglePin={() => void onRequestTogglePinNote(note)}
@@ -764,6 +804,7 @@ interface NoteRowProps {
   note: NoteSummary;
   depth: number;
   selected: boolean;
+  locked: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onTogglePin: () => void;
@@ -773,6 +814,7 @@ function NoteRow({
   note,
   depth,
   selected,
+  locked,
   onSelect,
   onDelete,
   onTogglePin,
@@ -831,6 +873,12 @@ function NoteRow({
         >
           <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-xs">{title}</span>
+          {locked && (
+            <Lock
+              aria-label="Đã khóa"
+              className="h-3 w-3 shrink-0 text-muted-foreground"
+            />
+          )}
         </button>
         <div className="mr-1 flex shrink-0 items-center gap-0.5">
           <button
@@ -870,17 +918,23 @@ function NoteRow({
 
 interface FolderMenuProps {
   color: string | null;
+  isLocked: boolean;
   onRename: () => void;
   onCreateChild: () => void;
   onChangeColor: (color: string | null) => void;
+  onLock: () => void;
+  onUnlock: () => void;
   onDelete: () => void;
 }
 
 function FolderMenu({
   color,
+  isLocked,
   onRename,
   onCreateChild,
   onChangeColor,
+  onLock,
+  onUnlock,
   onDelete,
 }: FolderMenuProps) {
   return (
@@ -933,6 +987,15 @@ function FolderMenu({
             />
           ))}
         </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={isLocked ? onUnlock : onLock}>
+          {isLocked ? (
+            <LockOpen className="h-3.5 w-3.5" />
+          ) : (
+            <Lock className="h-3.5 w-3.5" />
+          )}
+          {isLocked ? "Bỏ khóa" : "Khóa thư mục"}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={onDelete}

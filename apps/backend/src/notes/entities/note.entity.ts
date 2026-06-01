@@ -50,6 +50,9 @@ export class NoteEntity {
   @Column({ name: "is_pinned", type: "tinyint", width: 1, default: 0 })
   isPinned!: boolean;
 
+  @Column({ name: "is_locked", type: "tinyint", width: 1, default: 0 })
+  isLocked!: boolean;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

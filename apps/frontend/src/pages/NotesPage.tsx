@@ -6,8 +6,10 @@ import {
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type FormEvent,
   type KeyboardEvent,
 } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -23,6 +25,8 @@ import {
   ArrowLeft,
   ChevronDown,
   FolderTree,
+  Lock,
+  LockOpen,
   Paperclip,
   Pin,
   PinOff,
@@ -32,6 +36,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { NoteEditor } from "../components/editor/note-editor";
 import {
   DropdownMenu,
@@ -46,14 +51,18 @@ import {
   SheetTitle,
 } from "../components/ui/sheet";
 import { useConfirm } from "../components/ui/confirm-dialog";
+import { usePasswordPrompt } from "../components/ui/password-prompt";
 import { NotesExplorer } from "../components/notes/notes-explorer";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
+import { isNoteEffectivelyLocked, notebooksById } from "../lib/note-lock";
 
 const NOTES_LIST_LIMIT = 200;
 
 export function NotesPage() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
+  const promptPassword = usePasswordPrompt();
   const [searchInput, setSearchInput] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -94,7 +103,14 @@ export function NotesPage() {
     queryFn: api.listTags,
   });
 
+  const settingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.getSettings,
+  });
+  const hasNotesLock = settingsQuery.data?.hasNotesLock ?? false;
+
   const notebooks = notebooksQuery.data ?? [];
+  const nbById = useMemo(() => notebooksById(notebooks), [notebooks]);
 
   const notesQuery = useQuery({
     queryKey: ["notes", { q: debouncedQ, tag: activeTag }] as const,
@@ -183,6 +199,111 @@ export function NotesPage() {
     },
   });
 
+  /* ---- Khóa / bỏ khóa ---- */
+
+  const lockNoteMut = useMutation({
+    mutationFn: (id: string) => api.lockNote(id),
+    onSuccess: (saved) => {
+      qc.setQueryData(["note", saved.id], saved);
+      invalidateLists();
+    },
+  });
+
+  const unlockNoteMut = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.unlockNote(id, password),
+    onSuccess: (saved) => {
+      qc.setQueryData(["note", saved.id], saved);
+      invalidateLists();
+    },
+  });
+
+  const lockNotebookMut = useMutation({
+    mutationFn: (id: string) => api.lockNotebook(id),
+    onSuccess: () => {
+      invalidateNotebooks();
+      invalidateLists();
+    },
+  });
+
+  const unlockNotebookMut = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.unlockNotebook(id, password),
+    onSuccess: () => {
+      invalidateNotebooks();
+      invalidateLists();
+    },
+  });
+
+  // Nhắc người dùng đặt mật khẩu khóa (nếu chưa) rồi điều hướng sang Cài đặt.
+  const ensureLockConfigured = useCallback(async (): Promise<boolean> => {
+    if (hasNotesLock) return true;
+    const ok = await confirm({
+      title: "Chưa đặt mật khẩu khóa",
+      description:
+        "Bạn cần đặt mật khẩu khóa trong Cài đặt trước khi khóa ghi chú hay thư mục.",
+      confirmText: "Tới Cài đặt",
+    });
+    if (ok) void navigate({ to: "/settings" });
+    return false;
+  }, [hasNotesLock, confirm, navigate]);
+
+  const handleLockNote = useCallback(
+    async (id: string): Promise<void> => {
+      if (!(await ensureLockConfigured())) return;
+      await lockNoteMut.mutateAsync(id);
+    },
+    [ensureLockConfigured, lockNoteMut],
+  );
+
+  const handleUnlockNote = useCallback(
+    async (id: string): Promise<void> => {
+      const password = await promptPassword({
+        title: "Bỏ khóa ghi chú",
+        description: "Nhập mật khẩu khóa để gỡ bảo vệ ghi chú này.",
+      });
+      if (!password) return;
+      try {
+        await unlockNoteMut.mutateAsync({ id, password });
+      } catch {
+        await confirm({
+          title: "Mật khẩu không đúng",
+          description: "Không thể bỏ khóa ghi chú.",
+          confirmText: "Đóng",
+        });
+      }
+    },
+    [promptPassword, unlockNoteMut, confirm],
+  );
+
+  const handleLockNotebook = useCallback(
+    async (id: string): Promise<void> => {
+      if (!(await ensureLockConfigured())) return;
+      await lockNotebookMut.mutateAsync(id);
+    },
+    [ensureLockConfigured, lockNotebookMut],
+  );
+
+  const handleUnlockNotebook = useCallback(
+    async (id: string): Promise<void> => {
+      const password = await promptPassword({
+        title: "Bỏ khóa thư mục",
+        description: "Nhập mật khẩu khóa để gỡ bảo vệ thư mục này.",
+      });
+      if (!password) return;
+      try {
+        await unlockNotebookMut.mutateAsync({ id, password });
+      } catch {
+        await confirm({
+          title: "Mật khẩu không đúng",
+          description: "Không thể bỏ khóa thư mục.",
+          confirmText: "Đóng",
+        });
+      }
+    },
+    [promptPassword, unlockNotebookMut, confirm],
+  );
+
   const handleCreateNote = useCallback(
     async (notebookId: string | null): Promise<void> => {
       await createNote.mutateAsync({
@@ -244,6 +365,9 @@ export function NotesPage() {
       activeTag={activeTag}
       onTagChange={setActiveTag}
       isLoading={notesQuery.isLoading || notebooksQuery.isLoading}
+      notebooksById={nbById}
+      onLockNotebook={handleLockNotebook}
+      onUnlockNotebook={handleUnlockNotebook}
     />
   );
 
@@ -278,13 +402,16 @@ export function NotesPage() {
       >
         {selectedId ? (
           selectedQuery.data ? (
-          <NoteWorkspace
+          <NoteGateOrWorkspace
             key={selectedId}
             note={selectedQuery.data}
             notebooks={notebooks}
+            notebooksById={nbById}
             autoFocus={selectedId === autoFocusNoteId}
             onBack={() => setMobileView("list")}
             onOpenExplorer={() => setExplorerSheetOpen(true)}
+            onLockNote={handleLockNote}
+            onUnlockNote={handleUnlockNote}
             onSaved={(note) => {
               qc.setQueryData(["note", note.id], note);
               invalidateLists();
@@ -319,6 +446,132 @@ interface NoteWorkspaceProps {
   onDeleted: () => void;
   onBack: () => void;
   onOpenExplorer: () => void;
+  onLockNote: (id: string) => void;
+  onUnlockNote: (id: string) => void;
+}
+
+interface NoteGateOrWorkspaceProps extends NoteWorkspaceProps {
+  notebooksById: Map<string, Notebook>;
+}
+
+/**
+ * Cổng khóa: nếu note bị khóa hiệu lực lúc MỞ thì hiện màn nhập mật khẩu
+ * (per-view). Quyết định gate chỉ tính một lần lúc mount để việc khóa note ngay
+ * khi đang xem không tự đá người dùng ra màn khóa; lần mở sau (remount theo
+ * key=selectedId) sẽ gate lại.
+ */
+function NoteGateOrWorkspace({
+  note,
+  notebooksById,
+  ...rest
+}: NoteGateOrWorkspaceProps) {
+  const [lockedOnOpen] = useState(() =>
+    isNoteEffectivelyLocked(note, notebooksById),
+  );
+  const [revealed, setRevealed] = useState<Note | null>(null);
+
+  if (lockedOnOpen && !revealed) {
+    return (
+      <NoteLockGate
+        note={note}
+        onBack={rest.onBack}
+        onOpenExplorer={rest.onOpenExplorer}
+        onRevealed={setRevealed}
+      />
+    );
+  }
+  return <NoteWorkspace {...rest} note={revealed ?? note} />;
+}
+
+interface NoteLockGateProps {
+  note: Note;
+  onBack: () => void;
+  onOpenExplorer: () => void;
+  onRevealed: (full: Note) => void;
+}
+
+function NoteLockGate({
+  note,
+  onBack,
+  onOpenExplorer,
+  onRevealed,
+}: NoteLockGateProps) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const reveal = useMutation({
+    mutationFn: () => api.revealNote(note.id, password),
+    onSuccess: (full) => onRevealed(full),
+    onError: (e: unknown) =>
+      setError(e instanceof ApiError ? e.message : "Mật khẩu không đúng"),
+  });
+
+  const onSubmit = (e: FormEvent): void => {
+    e.preventDefault();
+    if (!password.trim()) return;
+    setError(null);
+    reveal.mutate();
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2 md:px-6">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted md:hidden"
+          aria-label="Quay lại danh sách"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onOpenExplorer}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+          aria-label="Mở danh sách thư mục"
+          title="Thư mục"
+        >
+          <FolderTree className="h-4 w-4" />
+        </button>
+      </header>
+      <div className="m-auto flex w-full max-w-sm flex-col items-center gap-4 px-6 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+          <Lock className="h-6 w-6" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold">Ghi chú đã khóa</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Nhập mật khẩu khóa để xem “{note.title || "Chưa có tiêu đề"}”.
+          </p>
+        </div>
+        <form onSubmit={onSubmit} className="w-full space-y-2">
+          <Input
+            autoFocus
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="Mật khẩu khóa"
+            autoComplete="current-password"
+          />
+          {error && (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!password.trim() || reveal.isPending}
+          >
+            {reveal.isPending ? "Đang mở…" : "Mở khóa"}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function NoteWorkspace({
@@ -329,6 +582,8 @@ function NoteWorkspace({
   onDeleted,
   onBack,
   onOpenExplorer,
+  onLockNote,
+  onUnlockNote,
 }: NoteWorkspaceProps) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -519,6 +774,24 @@ function NoteWorkspace({
                   ? `Đã lưu ${formatRelative(savedAt.toISOString())}`
                   : "Đã lưu"}
           </span>
+          <button
+            type="button"
+            onClick={() =>
+              note.isLocked ? onUnlockNote(note.id) : onLockNote(note.id)
+            }
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted",
+              note.isLocked ? "text-dot-orange" : "text-muted-foreground",
+            )}
+            title={note.isLocked ? "Bỏ khóa ghi chú" : "Khóa ghi chú"}
+            aria-label={note.isLocked ? "Bỏ khóa ghi chú" : "Khóa ghi chú"}
+          >
+            {note.isLocked ? (
+              <Lock className="h-4 w-4" />
+            ) : (
+              <LockOpen className="h-4 w-4" />
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setIsPinned((p) => !p)}

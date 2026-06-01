@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import type {
@@ -10,6 +14,7 @@ import type {
   Tag,
   UpdateNoteInput,
 } from "@assistant/shared";
+import { SettingsService } from "../settings/settings.service";
 import { NotebooksService } from "./notebooks.service";
 import { TagsService } from "./tags.service";
 import { AttachmentEntity } from "./entities/attachment.entity";
@@ -27,6 +32,7 @@ interface NoteSummaryRow {
   notebookId: string | null;
   title: string;
   isPinned: number | boolean;
+  isLocked: number | boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
   excerptSource: string | null;
@@ -46,6 +52,7 @@ export class NotesService {
     private readonly notes: Repository<NoteEntity>,
     private readonly notebooks: NotebooksService,
     private readonly tagsSvc: TagsService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(
@@ -120,6 +127,7 @@ export class NotesService {
       .addSelect("n.notebookId", "notebookId")
       .addSelect("n.title", "title")
       .addSelect("n.isPinned", "isPinned")
+      .addSelect("n.isLocked", "isLocked")
       .addSelect("n.createdAt", "createdAt")
       .addSelect("n.updatedAt", "updatedAt")
       .addSelect(`LEFT(n.content_text, ${EXCERPT_SOURCE_LEN})`, "excerptSource")
@@ -130,17 +138,26 @@ export class NotesService {
       .getRawMany<NoteSummaryRow>();
 
     const tagsByNote = await this.loadTagsByNote(rows.map((row) => row.id));
+    // Khóa hiệu lực = cờ riêng của note HOẶC notebook tổ tiên bị khóa (cascade).
+    // Ẩn excerpt cho mọi note bị khóa hiệu lực; tiêu đề vẫn hiển thị.
+    const lockedNb = await this.notebooks.lockedNotebookIds(userId);
 
-    const items: NoteSummary[] = rows.map((row) => ({
-      id: row.id,
-      notebookId: row.notebookId ?? null,
-      title: row.title,
-      excerpt: excerpt(row.excerptSource ?? ""),
-      isPinned: Boolean(row.isPinned),
-      createdAt: toIso(row.createdAt),
-      updatedAt: toIso(row.updatedAt),
-      tags: tagsByNote.get(row.id) ?? [],
-    }));
+    const items: NoteSummary[] = rows.map((row) => {
+      const effLocked =
+        Boolean(row.isLocked) ||
+        (row.notebookId != null && lockedNb.has(row.notebookId));
+      return {
+        id: row.id,
+        notebookId: row.notebookId ?? null,
+        title: row.title,
+        excerpt: effLocked ? "" : excerpt(row.excerptSource ?? ""),
+        isPinned: Boolean(row.isPinned),
+        isLocked: Boolean(row.isLocked),
+        createdAt: toIso(row.createdAt),
+        updatedAt: toIso(row.updatedAt),
+        tags: tagsByNote.get(row.id) ?? [],
+      };
+    });
 
     return {
       items,
@@ -182,7 +199,8 @@ export class NotesService {
     return byNote;
   }
 
-  async findOne(userId: string, id: string): Promise<Note> {
+  /** Tải DTO đầy đủ (luôn kèm content + attachments), KHÔNG kiểm tra khóa. */
+  private async loadFullDto(userId: string, id: string): Promise<Note> {
     const row = await this.notes.findOne({
       where: { id, userId },
       relations: { tags: true, attachments: true },
@@ -194,6 +212,53 @@ export class NotesService {
       });
     }
     return toDto(row);
+  }
+
+  private async isEffectivelyLocked(
+    userId: string,
+    note: Pick<Note, "isLocked" | "notebookId">,
+  ): Promise<boolean> {
+    if (note.isLocked) return true;
+    if (note.notebookId == null) return false;
+    const lockedNb = await this.notebooks.lockedNotebookIds(userId);
+    return lockedNb.has(note.notebookId);
+  }
+
+  /**
+   * GET công khai: nếu note bị khóa hiệu lực thì che nội dung (content rỗng,
+   * attachments rỗng) — frontend sẽ hiện màn nhập mật khẩu rồi gọi reveal().
+   */
+  async findOne(userId: string, id: string): Promise<Note> {
+    const dto = await this.loadFullDto(userId, id);
+    if (await this.isEffectivelyLocked(userId, dto)) {
+      return { ...dto, contentHtml: "", contentText: "", attachments: [] };
+    }
+    return dto;
+  }
+
+  /** Per-view: xác minh mật khẩu rồi trả nội dung đầy đủ. KHÔNG đổi cờ khóa. */
+  async reveal(userId: string, id: string, password: string): Promise<Note> {
+    await this.settings.requireNotesLock(userId, password);
+    return this.loadFullDto(userId, id);
+  }
+
+  async lock(userId: string, id: string): Promise<Note> {
+    if (!(await this.settings.hasNotesLock(userId))) {
+      throw new BadRequestException({
+        code: "notes_lock_not_set",
+        message: "Chưa đặt mật khẩu khóa",
+      });
+    }
+    await this.assertOwnership(userId, id);
+    await this.notes.update({ id, userId }, { isLocked: true });
+    return this.loadFullDto(userId, id);
+  }
+
+  async unlock(userId: string, id: string, password: string): Promise<Note> {
+    await this.settings.requireNotesLock(userId, password);
+    await this.assertOwnership(userId, id);
+    await this.notes.update({ id, userId }, { isLocked: false });
+    return this.loadFullDto(userId, id);
   }
 
   async assertOwnership(userId: string, noteId: string): Promise<NoteEntity> {
@@ -229,7 +294,9 @@ export class NotesService {
       tags,
     });
     const saved = await this.notes.save(entity);
-    return this.findOne(userId, saved.id);
+    // loadFullDto (không che) để người vừa tạo — kể cả trong notebook bị khóa —
+    // vẫn nhận đủ nội dung để soạn thảo ngay.
+    return this.loadFullDto(userId, saved.id);
   }
 
   async update(
@@ -265,7 +332,8 @@ export class NotesService {
     }
 
     await this.notes.save(entity);
-    return this.findOne(userId, id);
+    // Trả nội dung đầy đủ (không che): auto-save sau khi reveal không bị mất content.
+    return this.loadFullDto(userId, id);
   }
 
   async remove(userId: string, id: string): Promise<void> {
@@ -300,6 +368,7 @@ function toDto(e: NoteEntity): Note {
     contentHtml: e.contentHtml,
     contentText: e.contentText,
     isPinned: Boolean(e.isPinned),
+    isLocked: Boolean(e.isLocked),
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
     tags: (e.tags ?? []).map(tagToDto),

@@ -61,6 +61,15 @@ export class UserSettingsEntity {
   })
   defaultWalletId!: string | null;
 
+  // bcrypt hash của mật khẩu khóa ghi chú (NULL = chưa đặt). Không bao giờ trả ra DTO.
+  @Column({
+    name: "notes_lock_hash",
+    type: "varchar",
+    length: 60,
+    nullable: true,
+  })
+  notesLockHash!: string | null;
+
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }

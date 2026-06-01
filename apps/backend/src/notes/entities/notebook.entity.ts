@@ -37,6 +37,9 @@ export class NotebookEntity {
   @Column({ type: "varchar", length: 16, nullable: true })
   color!: string | null;
 
+  @Column({ name: "is_locked", type: "tinyint", width: 1, default: 0 })
+  isLocked!: boolean;
+
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 

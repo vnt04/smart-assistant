@@ -10,6 +10,7 @@ import type {
   Notebook,
   UpdateNotebookInput,
 } from "@assistant/shared";
+import { SettingsService } from "../settings/settings.service";
 import { NotebookEntity } from "./entities/notebook.entity";
 
 @Injectable()
@@ -17,6 +18,7 @@ export class NotebooksService {
   constructor(
     @InjectRepository(NotebookEntity)
     private readonly repo: Repository<NotebookEntity>,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(userId: string): Promise<Notebook[]> {
@@ -90,6 +92,58 @@ export class NotebooksService {
     await this.repo.remove(entity);
   }
 
+  async lock(userId: string, id: string): Promise<Notebook> {
+    if (!(await this.settings.hasNotesLock(userId))) {
+      throw new BadRequestException({
+        code: "notes_lock_not_set",
+        message: "Chưa đặt mật khẩu khóa",
+      });
+    }
+    const entity = await this.findOne(userId, id);
+    entity.isLocked = true;
+    return toDto(await this.repo.save(entity));
+  }
+
+  async unlock(
+    userId: string,
+    id: string,
+    password: string,
+  ): Promise<Notebook> {
+    await this.settings.requireNotesLock(userId, password);
+    const entity = await this.findOne(userId, id);
+    entity.isLocked = false;
+    return toDto(await this.repo.save(entity));
+  }
+
+  /**
+   * Tập id của các notebook bị khóa HIỆU LỰC (effective): mọi notebook có cờ
+   * is_locked riêng, cộng toàn bộ con cháu của chúng (khóa lan xuống / cascade).
+   * NotesService dùng tập này để xác định note nào bị che nội dung.
+   */
+  async lockedNotebookIds(userId: string): Promise<Set<string>> {
+    const all = await this.repo.find({
+      where: { userId },
+      select: ["id", "parentId", "isLocked"],
+    });
+    const childrenByParent = new Map<string, string[]>();
+    for (const row of all) {
+      if (!row.parentId) continue;
+      const bucket = childrenByParent.get(row.parentId);
+      if (bucket) bucket.push(row.id);
+      else childrenByParent.set(row.parentId, [row.id]);
+    }
+    const locked = new Set<string>();
+    const stack = all.filter((r) => r.isLocked).map((r) => r.id);
+    while (stack.length) {
+      const id = stack.pop() as string;
+      if (locked.has(id)) continue;
+      locked.add(id);
+      const kids = childrenByParent.get(id);
+      if (kids) stack.push(...kids);
+    }
+    return locked;
+  }
+
   /** Returns the notebook id plus every transitive descendant id. */
   async descendantIds(userId: string, rootId: string): Promise<string[]> {
     const all = await this.repo.find({
@@ -144,6 +198,7 @@ function toDto(e: NotebookEntity): Notebook {
     parentId: e.parentId,
     name: e.name,
     color: e.color,
+    isLocked: Boolean(e.isLocked),
     createdAt: e.createdAt.toISOString(),
     updatedAt: e.updatedAt.toISOString(),
   };

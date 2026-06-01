@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { AuthProvider } from "./features/auth/AuthContext";
 import { ThemeProvider } from "./components/theme/theme-provider";
 import { ConfirmDialogProvider } from "./components/ui/confirm-dialog";
+import { PasswordPromptProvider } from "./components/ui/password-prompt";
 import { router } from "./router";
 import "./index.css";
 
@@ -27,7 +28,9 @@ ReactDOM.createRoot(rootEl).render(
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ConfirmDialogProvider>
-            <RouterProvider router={router} />
+            <PasswordPromptProvider>
+              <RouterProvider router={router} />
+            </PasswordPromptProvider>
           </ConfirmDialogProvider>
         </AuthProvider>
       </QueryClientProvider>

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,14 +15,18 @@ import {
   type RefreshInput,
   type RegisterInput,
   type LoginInput,
+  type SetNotesLockInput,
   type UpdateSettingsInput,
   type UserProfile,
   type UserSettings,
+  type VerifyNotesLockInput,
   loginInputSchema,
   logoutInputSchema,
   refreshInputSchema,
   registerInputSchema,
+  setNotesLockInputSchema,
   updateSettingsInputSchema,
+  verifyNotesLockInputSchema,
 } from "@assistant/shared";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import { SettingsService } from "../settings/settings.service";
@@ -89,5 +94,29 @@ export class AuthController {
     input: UpdateSettingsInput,
   ): Promise<UserSettings> {
     return this.settings.update(user.id, input);
+  }
+
+  // Đặt mới hoặc đổi mật khẩu khóa ghi chú.
+  @Post("settings/notes-lock")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  setNotesLock(
+    @CurrentUser() user: UserEntity,
+    @Body(new ZodValidationPipe(setNotesLockInputSchema))
+    input: SetNotesLockInput,
+  ): Promise<UserSettings> {
+    return this.settings.setNotesLock(user.id, input);
+  }
+
+  // Xóa mật khẩu khóa (đồng thời mở khóa toàn bộ note/notebook của user).
+  @Delete("settings/notes-lock")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  clearNotesLock(
+    @CurrentUser() user: UserEntity,
+    @Body(new ZodValidationPipe(verifyNotesLockInputSchema))
+    input: VerifyNotesLockInput,
+  ): Promise<UserSettings> {
+    return this.settings.clearNotesLock(user.id, input.password);
   }
 }
