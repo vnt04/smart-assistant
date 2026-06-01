@@ -1,22 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  CalendarDays,
+  Briefcase,
   ChevronsLeft,
   ChevronsRight,
   Languages,
   LogOut,
   Menu,
   Moon,
+  Search,
   Settings,
-  Sparkles,
   Sun,
-  Wallet,
   StickyNote,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { useAuth } from "../../features/auth/AuthContext";
 import { useTheme } from "../theme/theme-provider";
+import { Input } from "../ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,12 +49,13 @@ interface NavItem {
   dot: DotColor;
 }
 
+// Các tab đang hiển thị trong sidebar.
+// Tạm thời ẩn: "/schedule" (Lịch), "/expense" (Chi tiêu), "/assistant" (Trợ lý).
+// Các route vẫn còn trong router.tsx — thêm lại vào đây để hiện lại khi cần.
 const NAV_ITEMS: NavItem[] = [
   { to: "/notes", label: "Notes", icon: StickyNote, dot: "yellow" },
   { to: "/vocab", label: "Vocab", icon: Languages, dot: "cyan" },
-  { to: "/schedule", label: "Lịch", icon: CalendarDays, dot: "blue" },
-  { to: "/expense", label: "Chi tiêu", icon: Wallet, dot: "green" },
-  { to: "/assistant", label: "Trợ lý", icon: Sparkles, dot: "purple" },
+  { to: "/job", label: "Job", icon: Briefcase, dot: "orange" },
 ];
 
 const DOT_BG: Record<DotColor, string> = {
@@ -101,10 +102,7 @@ export function AppShell({ children }: AppShellProps) {
       >
         <SidebarBrand collapsed={collapsed} />
         <SidebarNav collapsed={collapsed} pathname={path} />
-        <SidebarFooter
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((c) => !c)}
-        />
+        <SidebarFooter collapsed={collapsed} />
       </aside>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -113,7 +111,7 @@ export function AppShell({ children }: AppShellProps) {
           className="w-[260px] bg-sidebar p-0 text-sidebar-foreground"
         >
           <SheetHeader className="px-3 pt-4 pb-2">
-            <SheetTitle className="text-base">Personal Assistant</SheetTitle>
+            <SheetTitle className="text-base">Smart Assistant</SheetTitle>
           </SheetHeader>
           <SidebarNav collapsed={false} pathname={path} />
           <SidebarFooter collapsed={false} />
@@ -121,22 +119,82 @@ export function AppShell({ children }: AppShellProps) {
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2 md:hidden">
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted"
-            aria-label="Mở menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <Link to="/" className="text-sm font-semibold">
-            Personal Assistant
-          </Link>
-        </header>
+        <TopHeader
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+          onOpenMobileMenu={() => setMobileOpen(true)}
+        />
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
+  );
+}
+
+function TopHeader({
+  collapsed,
+  onToggleCollapse,
+  onOpenMobileMenu,
+}: {
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onOpenMobileMenu: () => void;
+}) {
+  const { resolved, toggle } = useTheme();
+
+  return (
+    <header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2.5 sm:px-4">
+      {/* Mobile: mở sidebar dạng sheet */}
+      <button
+        type="button"
+        onClick={onOpenMobileMenu}
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-muted md:hidden"
+        aria-label="Mở menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Desktop: thu gọn / mở rộng sidebar */}
+      <button
+        type="button"
+        onClick={onToggleCollapse}
+        className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground hover:bg-muted md:inline-flex"
+        title={collapsed ? "Mở rộng" : "Thu gọn"}
+        aria-label={collapsed ? "Mở rộng" : "Thu gọn"}
+      >
+        {collapsed ? (
+          <ChevronsRight className="h-5 w-5" />
+        ) : (
+          <ChevronsLeft className="h-5 w-5" />
+        )}
+      </button>
+
+      <div className="relative w-full max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="Tìm kiếm…"
+          aria-label="Tìm kiếm"
+          className="h-9 pl-9"
+        />
+      </div>
+
+      <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          onClick={toggle}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground hover:bg-muted"
+          title={resolved === "dark" ? "Chuyển sang sáng" : "Chuyển sang tối"}
+          aria-label="Đổi giao diện"
+        >
+          {resolved === "dark" ? (
+            <Sun className="h-4 w-4" />
+          ) : (
+            <Moon className="h-4 w-4" />
+          )}
+        </button>
+        <ProfileMenu variant="header" />
+      </div>
+    </header>
   );
 }
 
@@ -148,13 +206,14 @@ function SidebarBrand({ collapsed }: { collapsed: boolean }) {
         collapsed && "justify-center px-2",
       )}
     >
-      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <span className="text-sm font-bold">P</span>
-      </div>
+      <img
+        src="/logo.png"
+        alt="Smart Assistant"
+        className="h-7 w-7 shrink-0 object-contain"
+      />
       {!collapsed && (
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">Personal</div>
-          <div className="truncate text-xs text-sidebar-muted">Assistant</div>
+          <div className="truncate text-base font-semibold">Smart Assistant</div>
         </div>
       )}
     </div>
@@ -236,102 +295,85 @@ function SidebarLink({
   );
 }
 
-function SidebarFooter({
-  collapsed,
-  onToggleCollapse,
-}: {
-  collapsed: boolean;
-  onToggleCollapse?: () => void;
-}) {
-  const { resolved, toggle } = useTheme();
-  const { user, logout } = useAuth();
-
+function SidebarFooter({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="border-t border-sidebar-border p-2">
-      <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
-        <button
-          type="button"
-          onClick={toggle}
-          className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent"
-          title={resolved === "dark" ? "Chuyển sang sáng" : "Chuyển sang tối"}
-        >
-          {resolved === "dark" ? (
-            <Sun className="h-4 w-4" />
-          ) : (
-            <Moon className="h-4 w-4" />
-          )}
-          {!collapsed && (
-            <span>{resolved === "dark" ? "Sáng" : "Tối"}</span>
-          )}
-        </button>
-        <Link
-          to="/settings"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent"
-          title="Cài đặt"
-        >
-          <Settings className="h-4 w-4" />
-        </Link>
-        {onToggleCollapse && (
+      <ProfileMenu variant="sidebar" collapsed={collapsed} />
+    </div>
+  );
+}
+
+// Menu tài khoản dùng chung: avatar gọn ở header (góc trên phải) và
+// avatar + tên/email ở chân sidebar (góc dưới). Cùng một nội dung dropdown.
+function ProfileMenu({
+  variant,
+  collapsed = false,
+}: {
+  variant: "header" | "sidebar";
+  collapsed?: boolean;
+}) {
+  const { user, logout } = useAuth();
+  if (!user) return null;
+
+  const initial = (user.name?.[0] ?? user.email[0] ?? "?").toUpperCase();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        {variant === "header" ? (
           <button
             type="button"
-            onClick={onToggleCollapse}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent"
-            title={collapsed ? "Mở rộng" : "Thu gọn"}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            aria-label="Tài khoản"
           >
-            {collapsed ? (
-              <ChevronsRight className="h-4 w-4" />
-            ) : (
-              <ChevronsLeft className="h-4 w-4" />
+            {initial}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-accent",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+              {initial}
+            </span>
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium">
+                  {user.name ?? user.email.split("@")[0]}
+                </span>
+                <span className="block truncate text-2xs text-sidebar-muted">
+                  {user.email}
+                </span>
+              </span>
             )}
           </button>
         )}
-      </div>
-
-      {user && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "mt-1.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-accent",
-                collapsed && "justify-center px-0",
-              )}
-            >
-              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                {(user.name?.[0] ?? user.email[0] ?? "?").toUpperCase()}
-              </span>
-              {!collapsed && (
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium">
-                    {user.name ?? user.email.split("@")[0]}
-                  </span>
-                  <span className="block truncate text-2xs text-sidebar-muted">
-                    {user.email}
-                  </span>
-                </span>
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="right" align="end" className="w-56">
-            <DropdownMenuLabel>Tài khoản</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link to="/settings">
-                <Settings className="h-4 w-4" /> Cài đặt
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={() => {
-                void logout();
-              }}
-              className="text-destructive focus:text-destructive"
-            >
-              <LogOut className="h-4 w-4" /> Đăng xuất
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side={variant === "header" ? "bottom" : "right"}
+        align="end"
+        className="w-56"
+      >
+        <DropdownMenuLabel>Tài khoản</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/settings">
+            <Settings className="h-4 w-4" /> Cài đặt
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => {
+            void logout();
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <LogOut className="h-4 w-4" /> Đăng xuất
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

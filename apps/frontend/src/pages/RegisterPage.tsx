@@ -47,11 +47,13 @@ export function RegisterPage() {
       </div>
       <div className="relative z-10 w-full max-w-md animate-fade-in">
         <div className="mb-6 flex items-center justify-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-soft">
-            <span className="text-lg font-bold">P</span>
-          </div>
+          <img
+            src="/logo.png"
+            alt="Smart Assistant"
+            className="h-10 w-10 shrink-0 object-contain"
+          />
           <span className="text-lg font-semibold tracking-tight">
-            Personal Assistant
+            Smart Assistant
           </span>
         </div>
 

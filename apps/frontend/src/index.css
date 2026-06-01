@@ -148,7 +148,11 @@
   }
 
   .editor-canvas {
-    @apply mx-auto w-full max-w-[768px] px-6 py-10 md:px-10 lg:max-w-[900px] xl:max-w-[1150px] 2xl:max-w-[1400px] lg:py-14;
+    @apply mx-auto w-full max-w-[768px] px-6 pt-4 pb-10 md:px-10 lg:max-w-[900px] xl:max-w-[1150px] 2xl:max-w-[1400px] lg:pt-5 lg:pb-14;
+  }
+  /* Nội dung đầu tiên nằm sát title/tag, không thừa margin phía trên. */
+  .editor-canvas > :first-child {
+    @apply mt-0;
   }
 
   .prose-app h1 {

@@ -22,10 +22,10 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
-        includeAssets: ["favicon.svg"],
+        includeAssets: ["logo.png"],
         manifest: {
-          name: "Personal Assistant",
-          short_name: "Assistant",
+          name: "Smart Assistant",
+          short_name: "Smart Assistant",
           description: "Notes, schedule, expenses, AI",
           theme_color: "#0f172a",
           background_color: "#0f172a",
@@ -34,9 +34,9 @@ export default defineConfig(({ mode }) => {
           lang: "vi",
           icons: [
             {
-              src: "favicon.svg",
+              src: "logo.png",
               sizes: "any",
-              type: "image/svg+xml",
+              type: "image/png",
               purpose: "any",
             },
           ],
