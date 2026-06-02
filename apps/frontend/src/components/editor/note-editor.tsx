@@ -20,9 +20,12 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
+import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { common, createLowlight } from "lowlight";
 import {
   Bold,
+  Check,
+  ChevronDown,
   Code,
   Heading,
   Highlighter,
@@ -34,7 +37,7 @@ import {
   Trash2,
   Underline as UnderlineIcon,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { SlashCommands } from "./slash-commands";
@@ -80,6 +83,8 @@ export function NoteEditor({
         emptyNodeClass: "tiptap-placeholder",
       }),
       Typography,
+      TextStyle,
+      FontSize,
       TaskList,
       TaskItem.configure({ nested: true }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -185,6 +190,13 @@ export function NoteEditor({
         <BubbleBtn editor={editor} mark="highlight" title="Highlight">
           <Highlighter className="h-3.5 w-3.5" />
         </BubbleBtn>
+
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+
+        <FontSizeControl editor={editor} />
+
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+
         <button
           type="button"
           onClick={() => {
@@ -293,6 +305,100 @@ function BubbleBtn({
     >
       {children}
     </button>
+  );
+}
+
+/* -------------------- Font size -------------------- */
+
+const FONT_SIZES = [12, 14, 16, 18, 20, 24, 30] as const;
+const DEFAULT_FONT_SIZE = 16;
+
+function FontSizeControl({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const current = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      const raw = editor.getAttributes("textStyle").fontSize as
+        | string
+        | undefined;
+      const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : null;
+    },
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const display = current ?? DEFAULT_FONT_SIZE;
+
+  const apply = (size: number) => {
+    const chain = editor.chain().focus();
+    if (size === DEFAULT_FONT_SIZE) {
+      chain.unsetFontSize().run();
+    } else {
+      chain.setFontSize(`${size}px`).run();
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setOpen((value) => !value)}
+        title="Cỡ chữ"
+        aria-label="Cỡ chữ"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "inline-flex h-7 items-center gap-0.5 rounded-md px-1.5 text-xs tabular-nums text-muted-foreground hover:bg-muted hover:text-foreground",
+          (open || current !== null) && "bg-accent text-accent-foreground",
+        )}
+      >
+        {display}
+        <ChevronDown className="h-3 w-3" />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full z-50 mt-1 max-h-60 w-32 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-pop scrollbar-thin"
+        >
+          {FONT_SIZES.map((size) => {
+            const selected =
+              size === DEFAULT_FONT_SIZE ? current === null : current === size;
+            return (
+              <button
+                key={size}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => apply(size)}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-sm px-2 py-1 text-xs tabular-nums text-foreground hover:bg-muted",
+                  selected && "bg-accent text-accent-foreground",
+                )}
+              >
+                {size === DEFAULT_FONT_SIZE ? `${size} (mặc định)` : size}
+                {selected && <Check className="h-3 w-3 shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
