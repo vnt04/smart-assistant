@@ -27,7 +27,7 @@ export function RegisterPage() {
     setSubmitting(true);
     try {
       await register(parsed.data.email, parsed.data.password, parsed.data.name);
-      await navigate({ to: "/" });
+      await navigate({ to: "/notes" });
     } catch (err) {
       setError(
         err instanceof ApiError

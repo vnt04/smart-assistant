@@ -17,7 +17,7 @@ export function GoogleCallbackPage() {
     const expiresIn = Number(params.get("expires_in") ?? "0");
     if (accessToken && refreshToken) {
       tokenStorage.save({ accessToken, refreshToken, expiresIn });
-      void refreshProfile().then(() => navigate({ to: "/" }));
+      void refreshProfile().then(() => navigate({ to: "/notes" }));
     } else {
       void navigate({ to: "/login" });
     }

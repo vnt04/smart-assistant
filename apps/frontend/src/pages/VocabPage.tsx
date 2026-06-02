@@ -72,7 +72,7 @@ export function VocabPage() {
             </span>
             <div className="min-w-0">
               <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                Vocab
+                Words
               </h1>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Ôn tập những từ bạn hay quên.

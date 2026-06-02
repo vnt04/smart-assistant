@@ -10,7 +10,7 @@ export function JobPage() {
               <Briefcase className="h-5 w-5" />
             </div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Job
+              Jobs
             </h1>
           </div>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
@@ -26,7 +26,7 @@ export function JobPage() {
           <div>
             <h2 className="text-base font-semibold">Sắp ra mắt</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Khu vực quản lý Job đang được xây dựng. Hãy quay lại sau nhé.
+              Khu vực quản lý Jobs đang được xây dựng. Hãy quay lại sau nhé.
             </p>
           </div>
         </div>

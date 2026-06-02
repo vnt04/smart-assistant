@@ -3,6 +3,7 @@ import {
   Router,
   RootRoute,
   Route,
+  redirect,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
@@ -11,7 +12,6 @@ import { AppShell } from "./components/layout/app-shell";
 import { useAuth } from "./features/auth/AuthContext";
 import { AssistantPage } from "./pages/AssistantPage";
 import { ExpensePage } from "./pages/ExpensePage";
-import { HomePage } from "./pages/HomePage";
 import { JobPage } from "./pages/JobPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotesPage } from "./pages/NotesPage";
@@ -36,7 +36,7 @@ function RootLayout() {
       isPublic &&
       pathname !== "/auth/callback"
     ) {
-      void navigate({ to: "/", replace: true });
+      void navigate({ to: "/notes", replace: true });
     } else if (status === "unauthenticated" && !isPublic) {
       void navigate({ to: "/login", replace: true });
     }
@@ -70,7 +70,9 @@ const rootRoute = new RootRoute({ component: RootLayout });
 const indexRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomePage,
+  beforeLoad: () => {
+    throw redirect({ to: "/notes", replace: true });
+  },
 });
 
 const loginRoute = new Route({

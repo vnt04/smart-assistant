@@ -1,17 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Briefcase,
   ChevronsLeft,
   ChevronsRight,
-  Languages,
   LogOut,
   Menu,
   Moon,
   Search,
   Settings,
   Sun,
-  StickyNote,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { useAuth } from "../../features/auth/AuthContext";
@@ -45,7 +42,8 @@ type DotColor =
 interface NavItem {
   to: string;
   label: string;
-  icon: typeof StickyNote;
+  iconSrc: string;
+  iconClassName?: string;
   dot: DotColor;
 }
 
@@ -53,9 +51,15 @@ interface NavItem {
 // Tạm thời ẩn: "/schedule" (Lịch), "/expense" (Chi tiêu), "/assistant" (Trợ lý).
 // Các route vẫn còn trong router.tsx — thêm lại vào đây để hiện lại khi cần.
 const NAV_ITEMS: NavItem[] = [
-  { to: "/notes", label: "Notes", icon: StickyNote, dot: "yellow" },
-  { to: "/vocab", label: "Vocab", icon: Languages, dot: "cyan" },
-  { to: "/job", label: "Job", icon: Briefcase, dot: "orange" },
+  { to: "/notes", label: "Notes", iconSrc: "/nav-note.png", dot: "yellow" },
+  { to: "/vocab", label: "Words", iconSrc: "/nav-vocab.png", dot: "cyan" },
+  {
+    to: "/job",
+    label: "Jobs",
+    iconSrc: "/nav-job.png",
+    iconClassName: "h-8 w-8",
+    dot: "orange",
+  },
 ];
 
 const DOT_BG: Record<DotColor, string> = {
@@ -258,7 +262,6 @@ function SidebarLink({
   collapsed: boolean;
   active: boolean;
 }) {
-  const Icon = item.icon;
   return (
     <Link
       to={item.to}
@@ -274,12 +277,15 @@ function SidebarLink({
       <span
         className={cn(
           "inline-flex h-7 w-7 items-center justify-center rounded-md",
-          active
-            ? "bg-background text-foreground"
-            : "text-sidebar-foreground/80 group-hover:text-sidebar-foreground",
+          active && "bg-background",
         )}
       >
-        <Icon className="h-4 w-4" />
+        <img
+          src={item.iconSrc}
+          alt=""
+          aria-hidden
+          className={cn("object-contain", item.iconClassName ?? "h-6 w-6")}
+        />
       </span>
       {!collapsed && <span className="truncate">{item.label}</span>}
       {!collapsed && (

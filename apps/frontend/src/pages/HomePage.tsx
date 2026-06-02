@@ -31,7 +31,7 @@ const LINKS: QuickLink[] = [
   },
   {
     to: "/vocab",
-    label: "Vocab",
+    label: "Words",
     description: "Từ vựng hay quên, ôn tập theo tần suất",
     icon: Languages,
     accent: "bg-dot-cyan/10 text-dot-cyan",

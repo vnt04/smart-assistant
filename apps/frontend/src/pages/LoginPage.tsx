@@ -26,7 +26,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(parsed.data.email, parsed.data.password);
-      await navigate({ to: "/" });
+      await navigate({ to: "/notes" });
     } catch (err) {
       setError(
         err instanceof ApiError
