@@ -13,6 +13,7 @@ import {
 import type { NoteSummary, Notebook, Tag } from "@assistant/shared";
 import {
   ChevronRight,
+  CopyMinus,
   FileText,
   FilePlus,
   FolderPlus,
@@ -235,6 +236,22 @@ export function NotesExplorer({
 
   // When searching, expand everything so matches are visible.
   const isSearching = search.trim().length > 0;
+
+  // While searching, prune folders that have no matching note anywhere in their
+  // subtree (notes are already server-filtered to matches).
+  const visibleTree = useMemo(() => {
+    if (!isSearching) return folderTree;
+    const prune = (nodes: FolderNode[]): FolderNode[] =>
+      nodes.reduce<FolderNode[]>((acc, node) => {
+        const children = prune(node.children);
+        const hasMatch =
+          (notesByNotebook.get(node.notebook.id)?.length ?? 0) > 0 ||
+          children.length > 0;
+        if (hasMatch) acc.push({ ...node, children });
+        return acc;
+      }, []);
+    return prune(folderTree);
+  }, [isSearching, folderTree, notesByNotebook]);
   const effectiveExpanded = useMemo(() => {
     if (!isSearching) return expanded;
     const all = new Set<string>(expanded);
@@ -247,6 +264,15 @@ export function NotesExplorer({
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      persistExpanded(next);
+      return next;
+    });
+  };
+
+  const hasExpanded = expanded.size > 0;
+  const collapseAll = (): void => {
+    setExpanded(() => {
+      const next = new Set<string>();
       persistExpanded(next);
       return next;
     });
@@ -399,6 +425,14 @@ export function NotesExplorer({
               onChange={onTagChange}
             />
             <IconButton
+              title="Thu gọn tất cả thư mục"
+              ariaLabel="Thu gọn tất cả thư mục"
+              onClick={collapseAll}
+              disabled={isSearching || !hasExpanded}
+            >
+              <CopyMinus className="h-3.5 w-3.5" />
+            </IconButton>
+            <IconButton
               title="Thư mục mới"
               ariaLabel="Thư mục mới"
               onClick={() => setCreatingUnder("root")}
@@ -486,7 +520,7 @@ export function NotesExplorer({
 
         {!isLoading && (
           <ul className="space-y-0.5">
-            {folderTree.map((node) => (
+            {visibleTree.map((node) => (
               <FolderRow
                 key={node.notebook.id}
                 node={node}
@@ -543,7 +577,7 @@ export function NotesExplorer({
               />
             ))}
 
-            {folderTree.length === 0 && uncategorized.length === 0 && (
+            {visibleTree.length === 0 && uncategorized.length === 0 && (
               <li className="px-3 py-6 text-center text-2xs text-muted-foreground">
                 Chưa có thư mục hay ghi chú. Nhấn{" "}
                 <FolderPlus className="inline h-3 w-3" /> hoặc{" "}
@@ -785,15 +819,6 @@ function FolderRow({
               onTogglePin={() => void onRequestTogglePinNote(note)}
             />
           ))}
-
-          {!hasContent && (
-            <li
-              className="text-2xs text-muted-foreground"
-              style={{ paddingLeft: (depth + 1) * 12 + 20 }}
-            >
-              <span className="block py-1 italic">Trống</span>
-            </li>
-          )}
         </ul>
       )}
     </li>
@@ -1059,20 +1084,28 @@ interface IconButtonProps {
   title: string;
   ariaLabel: string;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }
 
-function IconButton({ title, ariaLabel, onClick, children }: IconButtonProps) {
+function IconButton({
+  title,
+  ariaLabel,
+  onClick,
+  disabled,
+  children,
+}: IconButtonProps) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
       title={title}
       aria-label={ariaLabel}
-      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
     >
       {children}
     </button>
