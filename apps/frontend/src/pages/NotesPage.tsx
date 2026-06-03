@@ -18,6 +18,7 @@ import type {
   Note,
   Notebook,
   NoteSummary,
+  ShareResourceType,
   UpdateNoteInput,
   UpdateNotebookInput,
 } from "@assistant/shared";
@@ -31,6 +32,7 @@ import {
   Pin,
   PinOff,
   Plus,
+  Share2,
   Star,
   Trash2,
   X,
@@ -53,6 +55,7 @@ import {
 import { useConfirm } from "../components/ui/confirm-dialog";
 import { usePasswordPrompt } from "../components/ui/password-prompt";
 import { NotesExplorer } from "../components/notes/notes-explorer";
+import { ShareDialog } from "../components/notes/share-dialog";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 import { isNoteEffectivelyLocked, notebooksById } from "../lib/note-lock";
@@ -87,6 +90,11 @@ export function NotesPage() {
     routeNoteId ? "editor" : "list",
   );
   const [explorerSheetOpen, setExplorerSheetOpen] = useState(false);
+  const [shareTarget, setShareTarget] = useState<{
+    type: ShareResourceType;
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQ(searchInput.trim()), 300);
@@ -368,6 +376,10 @@ export function NotesPage() {
       notebooksById={nbById}
       onLockNotebook={handleLockNotebook}
       onUnlockNotebook={handleUnlockNotebook}
+      onShareNotebook={(id) => {
+        const nb = nbById.get(id);
+        setShareTarget({ type: "notebook", id, name: nb?.name ?? "Notebook" });
+      }}
     />
   );
 
@@ -412,6 +424,13 @@ export function NotesPage() {
             onOpenExplorer={() => setExplorerSheetOpen(true)}
             onLockNote={handleLockNote}
             onUnlockNote={handleUnlockNote}
+            onShareNote={(id) =>
+              setShareTarget({
+                type: "note",
+                id,
+                name: selectedQuery.data?.title || "Ghi chú",
+              })
+            }
             onSaved={(note) => {
               qc.setQueryData(["note", note.id], note);
               invalidateLists();
@@ -432,6 +451,18 @@ export function NotesPage() {
           <EmptyState onCreate={() => void handleCreateNote(null)} />
         )}
       </main>
+
+      {shareTarget && (
+        <ShareDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      )}
     </section>
   );
 }
@@ -448,6 +479,7 @@ interface NoteWorkspaceProps {
   onOpenExplorer: () => void;
   onLockNote: (id: string) => void;
   onUnlockNote: (id: string) => void;
+  onShareNote: (id: string) => void;
 }
 
 interface NoteGateOrWorkspaceProps extends NoteWorkspaceProps {
@@ -584,6 +616,7 @@ function NoteWorkspace({
   onOpenExplorer,
   onLockNote,
   onUnlockNote,
+  onShareNote,
 }: NoteWorkspaceProps) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -774,6 +807,15 @@ function NoteWorkspace({
                   ? `Đã lưu ${formatRelative(savedAt.toISOString())}`
                   : "Đã lưu"}
           </span>
+          <button
+            type="button"
+            onClick={() => onShareNote(note.id)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            title="Chia sẻ ghi chú"
+            aria-label="Chia sẻ ghi chú"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() =>

@@ -12,12 +12,15 @@ import type {
 } from "@assistant/shared";
 import { SettingsService } from "../settings/settings.service";
 import { NotebookEntity } from "./entities/notebook.entity";
+import { ShareEntity } from "./entities/share.entity";
 
 @Injectable()
 export class NotebooksService {
   constructor(
     @InjectRepository(NotebookEntity)
     private readonly repo: Repository<NotebookEntity>,
+    @InjectRepository(ShareEntity)
+    private readonly shares: Repository<ShareEntity>,
     private readonly settings: SettingsService,
   ) {}
 
@@ -90,6 +93,12 @@ export class NotebooksService {
   async remove(userId: string, id: string): Promise<void> {
     const entity = await this.findOne(userId, id);
     await this.repo.remove(entity);
+    // Dọn cấu hình chia sẻ của notebook (bảng shares là polymorphic, không FK).
+    await this.shares.delete({
+      ownerUserId: userId,
+      resourceType: "notebook",
+      resourceId: id,
+    });
   }
 
   async lock(userId: string, id: string): Promise<Notebook> {

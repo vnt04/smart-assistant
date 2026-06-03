@@ -19,6 +19,7 @@ import { NotebooksService } from "./notebooks.service";
 import { TagsService } from "./tags.service";
 import { AttachmentEntity } from "./entities/attachment.entity";
 import { NoteEntity } from "./entities/note.entity";
+import { ShareEntity } from "./entities/share.entity";
 import { TagEntity } from "./entities/tag.entity";
 import { excerpt, htmlToText } from "./util/html-to-text";
 
@@ -50,6 +51,8 @@ export class NotesService {
   constructor(
     @InjectRepository(NoteEntity)
     private readonly notes: Repository<NoteEntity>,
+    @InjectRepository(ShareEntity)
+    private readonly shares: Repository<ShareEntity>,
     private readonly notebooks: NotebooksService,
     private readonly tagsSvc: TagsService,
     private readonly settings: SettingsService,
@@ -345,6 +348,12 @@ export class NotesService {
       });
     }
     await this.notes.remove(row);
+    // Dọn cấu hình chia sẻ (bảng shares không có FK tới notes vì là polymorphic).
+    await this.shares.delete({
+      ownerUserId: userId,
+      resourceType: "note",
+      resourceId: id,
+    });
   }
 }
 

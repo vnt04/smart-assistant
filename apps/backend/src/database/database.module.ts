@@ -8,6 +8,8 @@ import { NotebookEntity } from "../notes/entities/notebook.entity";
 import { NoteEntity } from "../notes/entities/note.entity";
 import { TagEntity } from "../notes/entities/tag.entity";
 import { AttachmentEntity } from "../notes/entities/attachment.entity";
+import { ShareEntity } from "../notes/entities/share.entity";
+import { ShareInviteEntity } from "../notes/entities/share-invite.entity";
 import { EventEntity } from "../schedule/entities/event.entity";
 import { TaskEntity } from "../schedule/entities/task.entity";
 import { ReminderEntity } from "../schedule/entities/reminder.entity";
@@ -41,6 +43,8 @@ import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
           NoteEntity,
           TagEntity,
           AttachmentEntity,
+          ShareEntity,
+          ShareInviteEntity,
           EventEntity,
           TaskEntity,
           ReminderEntity,

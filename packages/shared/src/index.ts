@@ -5,6 +5,7 @@ export * from "./api.js";
 export * from "./notebooks.js";
 export * from "./tags.js";
 export * from "./notes.js";
+export * from "./shares.js";
 export * from "./events.js";
 export * from "./tasks.js";
 export * from "./reminders.js";
