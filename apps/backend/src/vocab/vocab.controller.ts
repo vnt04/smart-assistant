@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Post, Res, UseFilters } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Res,
+  UseFilters,
+} from "@nestjs/common";
 import type { Response } from "express";
 import type { TrackVocabResponse, VocabItem } from "@assistant/shared";
 import { VocabExceptionFilter } from "./vocab-exception.filter";
@@ -27,5 +38,11 @@ export class VocabController {
     const result = await this.svc.track(body);
     res.status(result.status === "created" ? 201 : 200);
     return result;
+  }
+
+  @Delete(":id")
+  @HttpCode(204)
+  remove(@Param("id", ParseUUIDPipe) id: string): Promise<void> {
+    return this.svc.remove(id);
   }
 }

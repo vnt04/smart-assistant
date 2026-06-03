@@ -1,7 +1,23 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { VocabItem } from "@assistant/shared";
-import { Flame, Languages, RefreshCw, Search } from "lucide-react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  MAX_VOCAB_COUNT,
+  MAX_VOCAB_TEXT_LENGTH,
+  type CreateVocabInput,
+  type VocabItem,
+} from "@assistant/shared";
+import {
+  Flame,
+  Languages,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import { Button } from "../components/ui/button";
+import { useConfirm } from "../components/ui/confirm-dialog";
 import { Input } from "../components/ui/input";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -32,8 +48,40 @@ const TIER_BAR: Record<Tier, string> = {
 };
 
 export function VocabPage() {
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
   const vocabQuery = useQuery({ queryKey: ["vocab"], queryFn: api.listVocab });
+
+  const createMutation = useMutation({
+    mutationFn: api.createVocab,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["vocab"] });
+      setShowForm(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteVocab,
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["vocab"] }),
+  });
+
+  // Mở/đóng form; reset lỗi cũ của lần thêm trước để không hiện lại.
+  function toggleForm(): void {
+    createMutation.reset();
+    setShowForm((open) => !open);
+  }
+
+  async function handleDelete(item: VocabItem): Promise<void> {
+    const confirmed = await confirm({
+      title: `Xóa “${item.text}”?`,
+      description: "Từ này sẽ bị xóa khỏi danh sách ôn tập.",
+      confirmText: "Xóa",
+      variant: "destructive",
+    });
+    if (confirmed) deleteMutation.mutate(item.id);
+  }
 
   const items = vocabQuery.data ?? [];
 
@@ -66,19 +114,51 @@ export function VocabPage() {
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 md:px-10 md:py-12">
         <header className="relative animate-fade-in">
           <div className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full bg-dot-cyan/10 blur-3xl" />
-          <div className="relative flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-dot-cyan/10 text-dot-cyan ring-1 ring-inset ring-dot-cyan/20">
-              <Languages className="h-6 w-6" />
-            </span>
-            <div className="min-w-0">
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                Words
-              </h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Ôn tập những từ bạn hay quên.
-              </p>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-dot-cyan/10 text-dot-cyan ring-1 ring-inset ring-dot-cyan/20">
+                <Languages className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+                  Words
+                </h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Ôn tập những từ bạn hay quên.
+                </p>
+              </div>
             </div>
+            <Button
+              type="button"
+              size="sm"
+              variant={showForm ? "outline" : "default"}
+              onClick={toggleForm}
+              className="shrink-0"
+            >
+              {showForm ? (
+                <>
+                  <X className="h-4 w-4" /> Đóng
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" /> Thêm từ
+                </>
+              )}
+            </Button>
           </div>
+
+          {showForm && (
+            <AddWordForm
+              onSubmit={(input) => createMutation.mutate(input)}
+              onCancel={() => setShowForm(false)}
+              isPending={createMutation.isPending}
+              serverError={
+                createMutation.isError
+                  ? "Không thể thêm từ. Vui lòng thử lại."
+                  : null
+              }
+            />
+          )}
         </header>
 
         <div className="mt-8">
@@ -131,7 +211,15 @@ export function VocabPage() {
                 ) : (
                   <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                     {filtered.map((item) => (
-                      <WordRow key={item.id} item={item} />
+                      <WordRow
+                        key={item.id}
+                        item={item}
+                        onDelete={handleDelete}
+                        isDeleting={
+                          deleteMutation.isPending &&
+                          deleteMutation.variables === item.id
+                        }
+                      />
                     ))}
                   </ul>
                 )}
@@ -198,9 +286,17 @@ function ReviewCard({
   );
 }
 
-function WordRow({ item }: { item: VocabItem }) {
+function WordRow({
+  item,
+  onDelete,
+  isDeleting,
+}: {
+  item: VocabItem;
+  onDelete: (item: VocabItem) => void;
+  isDeleting: boolean;
+}) {
   return (
-    <li className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
+    <li className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50">
       <span
         className={cn(
           "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -217,7 +313,144 @@ function WordRow({ item }: { item: VocabItem }) {
         )}
       </div>
       <CountBadge count={item.count} />
+      <button
+        type="button"
+        onClick={() => onDelete(item)}
+        disabled={isDeleting}
+        aria-label={`Xóa từ ${item.text}`}
+        title="Xóa từ"
+        className={cn(
+          "shrink-0 rounded-md p-1.5 text-muted-foreground/40 transition-colors",
+          "hover:bg-destructive/10 hover:text-destructive",
+          "focus-visible:text-destructive focus-visible:outline-none disabled:opacity-50",
+          // Trên desktop chỉ hiện khi hover/focus; trên mobile luôn hiện.
+          "sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100",
+        )}
+      >
+        {isDeleting ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Trash2 className="h-4 w-4" />
+        )}
+      </button>
     </li>
+  );
+}
+
+/** Form nhập từ thủ công: 1 ô từ, 1 ô số lần (tùy chọn). */
+function AddWordForm({
+  onSubmit,
+  onCancel,
+  isPending,
+  serverError,
+}: {
+  onSubmit: (input: CreateVocabInput) => void;
+  onCancel: () => void;
+  isPending: boolean;
+  serverError: string | null;
+}) {
+  const [text, setText] = useState("");
+  const [count, setCount] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(e: FormEvent): void {
+    e.preventDefault();
+    const cleaned = text.trim().replace(/\s+/g, " ");
+    if (!cleaned) {
+      setError("Vui lòng nhập từ.");
+      return;
+    }
+    if (cleaned.length > MAX_VOCAB_TEXT_LENGTH) {
+      setError(`Từ tối đa ${MAX_VOCAB_TEXT_LENGTH} ký tự.`);
+      return;
+    }
+
+    let parsedCount: number | undefined;
+    const rawCount = count.trim();
+    if (rawCount) {
+      const n = Number(rawCount);
+      if (!Number.isInteger(n) || n < 1 || n > MAX_VOCAB_COUNT) {
+        setError(`Số lần phải là số nguyên từ 1 đến ${MAX_VOCAB_COUNT}.`);
+        return;
+      }
+      parsedCount = n;
+    }
+
+    setError(null);
+    onSubmit({ text: cleaned, count: parsedCount });
+  }
+
+  const message = error ?? serverError;
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-6 animate-fade-in rounded-2xl border border-border bg-card p-4 shadow-soft"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1">
+          <label
+            htmlFor="vocab-text"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
+            Từ mới
+          </label>
+          <Input
+            id="vocab-text"
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="Nhập từ…"
+            maxLength={MAX_VOCAB_TEXT_LENGTH}
+            autoFocus
+            disabled={isPending}
+          />
+        </div>
+        <div className="sm:w-36">
+          <label
+            htmlFor="vocab-count"
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+          >
+            Số lần (tùy chọn)
+          </label>
+          <Input
+            id="vocab-count"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={MAX_VOCAB_COUNT}
+            value={count}
+            onChange={(e) => {
+              setCount(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="1"
+            disabled={isPending}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            Thêm
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isPending}
+          >
+            Hủy
+          </Button>
+        </div>
+      </div>
+      {message && <p className="mt-2 text-sm text-destructive">{message}</p>}
+    </form>
   );
 }
 

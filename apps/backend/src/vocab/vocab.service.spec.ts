@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Repository } from "typeorm";
 import { VocabService } from "./vocab.service";
 import { VocabItemEntity } from "./entities/vocab-item.entity";
@@ -43,6 +43,12 @@ function makeRepo(seed: VocabItemEntity[] = []) {
         sorted.sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
       }
       return sorted;
+    },
+    async delete(where: Where) {
+      const idx = rows.findIndex((r) => matches(r, where));
+      if (idx === -1) return { affected: 0 };
+      rows.splice(idx, 1);
+      return { affected: 1 };
     },
   };
 }
@@ -153,6 +159,74 @@ describe("VocabService.track", () => {
     const res = await svc.track({ text: "a".repeat(50) });
 
     expect(res.status).toBe("created");
+  });
+
+  it("creates a word with the given count for manual entry", async () => {
+    const { svc } = makeService();
+
+    const res = await svc.track({ text: "ephemeral", count: 3 });
+
+    expect(res.status).toBe("created");
+    expect(res.item.count).toBe(3);
+  });
+
+  it("increments an existing word by the given count", async () => {
+    const { svc } = makeService([seedRow({ count: 2 })]);
+
+    const res = await svc.track({ text: "overwhelmed", count: 3 });
+
+    expect(res.status).toBe("incremented");
+    expect(res.item.count).toBe(5);
+  });
+
+  it("rejects a non-positive count with reason 'invalid_count'", async () => {
+    const { svc } = makeService();
+    expect.assertions(1);
+    try {
+      await svc.track({ text: "word", count: 0 });
+    } catch (e) {
+      expect((e as BadRequestException).getResponse()).toEqual({
+        status: "error",
+        reason: "invalid_count",
+      });
+    }
+  });
+
+  it("rejects a non-integer count with reason 'invalid_count'", async () => {
+    const { svc } = makeService();
+    expect.assertions(1);
+    try {
+      await svc.track({ text: "word", count: 1.5 });
+    } catch (e) {
+      expect((e as BadRequestException).getResponse()).toEqual({
+        status: "error",
+        reason: "invalid_count",
+      });
+    }
+  });
+});
+
+describe("VocabService.remove", () => {
+  it("deletes an existing word", async () => {
+    const { svc, repo } = makeService([seedRow()]);
+
+    await svc.remove("seed-1");
+
+    expect(repo.rows).toHaveLength(0);
+  });
+
+  it("throws not_found when the id does not exist", async () => {
+    const { svc } = makeService([seedRow()]);
+    expect.assertions(2);
+    try {
+      await svc.remove("missing-id");
+    } catch (e) {
+      expect(e).toBeInstanceOf(NotFoundException);
+      expect((e as NotFoundException).getResponse()).toEqual({
+        status: "error",
+        reason: "not_found",
+      });
+    }
   });
 });
 

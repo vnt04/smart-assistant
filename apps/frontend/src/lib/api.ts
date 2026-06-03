@@ -23,6 +23,7 @@ import {
   trendResponseSchema,
   userProfileSchema,
   userSettingsSchema,
+  trackVocabResponseSchema,
   vocabListResponseSchema,
   walletSchema,
   type AiConversation,
@@ -45,6 +46,7 @@ import {
   type CreateTagInput,
   type CreateTaskInput,
   type CreateTransactionInput,
+  type CreateVocabInput,
   type CreateWalletInput,
   type Event as EventDto,
   type EventListQuery,
@@ -68,6 +70,7 @@ import {
   type Transaction,
   type TransactionListQuery,
   type TransactionListResponse,
+  type TrackVocabResponse,
   type TrendQuery,
   type TrendResponse,
   type UpdateBudgetInput,
@@ -644,6 +647,14 @@ export const api = {
   // Vocab (public endpoint — no auth required)
   listVocab: async (): Promise<VocabItem[]> =>
     vocabListResponseSchema.parse(await request("/vocab", { auth: false })),
+
+  createVocab: async (input: CreateVocabInput): Promise<TrackVocabResponse> =>
+    trackVocabResponseSchema.parse(
+      await request("/vocab", { method: "POST", body: input, auth: false }),
+    ),
+
+  deleteVocab: async (id: string): Promise<void> =>
+    request(`/vocab/${id}`, { method: "DELETE", auth: false }),
 };
 
 function toQuery(query: Record<string, unknown>): string {

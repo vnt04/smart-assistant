@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
 import {
@@ -20,12 +24,14 @@ export class VocabService {
   ) {}
 
   /**
-   * Records one sighting of a word: creates it (count = 1) or increments the
-   * existing row's count. Dedup is case-insensitive on the
-   * trim + whitespace-collapsed text.
+   * Records sightings of a word: creates it or increments the existing row's
+   * count. `count` (default 1) lets the manual "add word" form record several
+   * sightings at once. Dedup is case-insensitive on the trim +
+   * whitespace-collapsed text.
    */
   async track(input: unknown): Promise<TrackVocabResponse> {
-    const cleaned = normalizeText(extractText(input));
+    const { text, count } = extractInput(input);
+    const cleaned = normalizeText(text);
 
     if (cleaned.length === 0) {
       throw new BadRequestException({ status: "error", reason: "empty" });
@@ -38,12 +44,15 @@ export class VocabService {
 
     const existing = await this.repo.findOne({ where: { normalized } });
     if (existing) {
-      return { status: "incremented", item: await this.bumpCount(existing.id) };
+      return {
+        status: "incremented",
+        item: await this.bumpCount(existing.id, count),
+      };
     }
 
     try {
       const saved = await this.repo.save(
-        this.repo.create({ text: cleaned, normalized, count: 1, notes: "" }),
+        this.repo.create({ text: cleaned, normalized, count, notes: "" }),
       );
       return { status: "created", item: toDto(saved) };
     } catch (e) {
@@ -51,7 +60,10 @@ export class VocabService {
       // of failing on the unique constraint.
       if (isDuplicateEntry(e)) {
         const row = await this.repo.findOneOrFail({ where: { normalized } });
-        return { status: "incremented", item: await this.bumpCount(row.id) };
+        return {
+          status: "incremented",
+          item: await this.bumpCount(row.id, count),
+        };
       }
       throw e;
     }
@@ -63,20 +75,36 @@ export class VocabService {
     return rows.map(toDto);
   }
 
-  private async bumpCount(id: string): Promise<VocabItem> {
-    await this.repo.increment({ id }, "count", 1);
+  /** Permanently removes a word; throws `not_found` if the id does not exist. */
+  async remove(id: string): Promise<void> {
+    const result = await this.repo.delete({ id });
+    if (!result.affected) {
+      throw new NotFoundException({ status: "error", reason: "not_found" });
+    }
+  }
+
+  private async bumpCount(id: string, by: number): Promise<VocabItem> {
+    await this.repo.increment({ id }, "count", by);
     const row = await this.repo.findOneOrFail({ where: { id } });
     return toDto(row);
   }
 }
 
-/** Pulls `text` out of an untrusted body; missing/non-string is treated as empty. */
-function extractText(input: unknown): string {
+/**
+ * Pulls `text` and the (optional) `count` out of an untrusted body. A missing
+ * or non-string `text`, or an out-of-range `count`, is rejected up front so the
+ * extension and the manual form get a stable reason code.
+ */
+function extractInput(input: unknown): { text: string; count: number } {
   const parsed = createVocabInputSchema.safeParse(input);
   if (!parsed.success) {
-    throw new BadRequestException({ status: "error", reason: "empty" });
+    const badCount = parsed.error.issues.some((i) => i.path[0] === "count");
+    throw new BadRequestException({
+      status: "error",
+      reason: badCount ? "invalid_count" : "empty",
+    });
   }
-  return parsed.data.text;
+  return { text: parsed.data.text, count: parsed.data.count ?? 1 };
 }
 
 /** Trims and collapses internal whitespace runs to single spaces. */
