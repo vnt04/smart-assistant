@@ -28,6 +28,7 @@ import {
   userSettingsSchema,
   trackVocabResponseSchema,
   vocabListResponseSchema,
+  jobListResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -93,6 +94,7 @@ import {
   type UserProfile,
   type UserSettings,
   type VocabItem,
+  type Job,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -727,6 +729,13 @@ export const api = {
 
   deleteVocab: async (id: string): Promise<void> =>
     request(`/vocab/${id}`, { method: "DELETE", auth: false }),
+
+  // Jobs (public endpoint — n8n ingest qua POST; view dùng GET/DELETE)
+  listJobs: async (): Promise<Job[]> =>
+    jobListResponseSchema.parse(await request("/jobs", { auth: false })),
+
+  deleteJob: async (id: string): Promise<void> =>
+    request(`/jobs/${id}`, { method: "DELETE", auth: false }),
 };
 
 function toQuery(query: Record<string, unknown>): string {

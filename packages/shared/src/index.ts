@@ -16,3 +16,4 @@ export * from "./budgets.js";
 export * from "./reports.js";
 export * from "./ai.js";
 export * from "./vocab.js";
+export * from "./jobs.js";
