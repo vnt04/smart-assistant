@@ -180,6 +180,27 @@
   .prose-app pre code {
     @apply bg-transparent p-0 rounded-none font-normal text-inherit;
   }
+
+  /* Code block kiểu ChatGPT: wrapper bọc viền + bo góc, header có nhãn ngôn ngữ
+     và nút chép; <pre> bên trong bỏ viền/bo góc/margin để header liền mạch. */
+  .prose-app .code-block-wrapper {
+    @apply relative my-4 overflow-hidden rounded-lg border border-border;
+  }
+  .prose-app .code-block-wrapper > pre {
+    @apply my-0 rounded-none border-0;
+  }
+  .prose-app .code-block-header {
+    @apply flex items-center justify-between gap-2 border-b border-border bg-muted/60 px-3 py-1.5 select-none;
+  }
+  .code-block-lang {
+    @apply text-2xs font-medium uppercase tracking-wider text-muted-foreground;
+  }
+  .code-block-copy {
+    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground;
+  }
+  .code-block-copy.is-copied {
+    @apply text-primary;
+  }
   .prose-app mark {
     @apply text-foreground rounded-sm px-0.5;
     background-color: hsl(var(--dot-yellow) / 0.3);

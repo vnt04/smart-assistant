@@ -50,24 +50,31 @@ export function SharedPage() {
 
   const data = resourceQuery.data;
 
+  // Mở một note qua liên kết (mention) hoặc qua danh sách notebook → tải note đó
+  // trong phạm vi token. Backend tự enforce quyền: note-share chỉ cho đúng note
+  // gốc, notebook-share cho note nằm trong cây notebook đã chia sẻ; ngoài phạm vi
+  // trả lỗi và hiện thông báo thân thiện. "Quay lại" về màn chủ (note gốc / danh
+  // sách notebook).
+  const backLabel =
+    data.resourceType === "notebook"
+      ? data.notebook.name
+      : data.note.title || "Ghi chú";
+
   return (
     <Shell ownerName={data.ownerName}>
-      {data.resourceType === "note" ? (
-        <ReadOnlyNote note={data.note} />
-      ) : openNoteId ? (
-        noteQuery.isLoading ? (
-          <CenteredLoader />
-        ) : noteQuery.isError || !noteQuery.data ? (
-          <div className="space-y-4">
-            <BackButton label={data.notebook.name} onClick={() => setOpenNoteId(null)} />
+      {openNoteId ? (
+        <div className="space-y-4">
+          <BackButton label={backLabel} onClick={() => setOpenNoteId(null)} />
+          {noteQuery.isLoading ? (
+            <CenteredLoader />
+          ) : noteQuery.isError || !noteQuery.data ? (
             <SharedError error={noteQuery.error} token={token} embedded />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <BackButton label={data.notebook.name} onClick={() => setOpenNoteId(null)} />
-            <ReadOnlyNote note={noteQuery.data.note} />
-          </div>
-        )
+          ) : (
+            <ReadOnlyNote note={noteQuery.data.note} onOpenNote={setOpenNoteId} />
+          )}
+        </div>
+      ) : data.resourceType === "note" ? (
+        <ReadOnlyNote note={data.note} onOpenNote={setOpenNoteId} />
       ) : (
         <NotebookList
           name={data.notebook.name}
@@ -101,7 +108,13 @@ function Shell({ ownerName, children }: ShellProps) {
   );
 }
 
-function ReadOnlyNote({ note }: { note: SharedNoteView }) {
+interface ReadOnlyNoteProps {
+  note: SharedNoteView;
+  // Mở một note khác được mention trong nội dung (trong phạm vi cùng token).
+  onOpenNote?: (id: string) => void;
+}
+
+function ReadOnlyNote({ note, onOpenNote }: ReadOnlyNoteProps) {
   return (
     <article className="space-y-3">
       <div className="space-y-1">
@@ -112,7 +125,12 @@ function ReadOnlyNote({ note }: { note: SharedNoteView }) {
           Cập nhật {formatDate(note.updatedAt)}
         </p>
       </div>
-      <NoteEditor value={note.contentHtml} editable={false} onChange={() => {}} />
+      <NoteEditor
+        value={note.contentHtml}
+        editable={false}
+        onChange={() => {}}
+        onOpenNote={onOpenNote}
+      />
     </article>
   );
 }

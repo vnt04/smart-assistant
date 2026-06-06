@@ -15,7 +15,6 @@ import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
@@ -42,6 +41,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { SlashCommands } from "./slash-commands";
 import { NoteMention, type NoteRef } from "./note-mention";
+import { CodeBlock } from "./code-block";
 
 const lowlight = createLowlight(common);
 
@@ -108,7 +108,7 @@ export function NoteEditor({
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Highlight.configure({ multicolor: false }),
       Image.configure({ inline: false, allowBase64: true }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CodeBlock.configure({ lowlight }),
       Table.configure({ resizable: true, allowTableNodeSelection: true }),
       TableRow,
       TableHeader,
