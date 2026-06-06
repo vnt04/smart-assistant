@@ -7,6 +7,7 @@ import {
 import type { Repository } from "typeorm";
 import type { UsersService } from "../users/users.service";
 import type { NoteEntity } from "./entities/note.entity";
+import type { NoteReferenceEntity } from "./entities/note-reference.entity";
 import type { NotebookEntity } from "./entities/notebook.entity";
 import type { ShareEntity } from "./entities/share.entity";
 import type { ShareInviteEntity } from "./entities/share-invite.entity";
@@ -22,6 +23,7 @@ interface Mocks {
   invites?: Partial<Repository<ShareInviteEntity>>;
   notesRepo?: Partial<Repository<NoteEntity>>;
   notebooksRepo?: Partial<Repository<NotebookEntity>>;
+  refs?: Partial<Repository<NoteReferenceEntity>>;
   notebooks?: Partial<NotebooksService>;
   users?: Partial<UsersService>;
 }
@@ -32,6 +34,7 @@ function makeService(m: Mocks): SharesService {
     (m.invites ?? {}) as Repository<ShareInviteEntity>,
     (m.notesRepo ?? {}) as Repository<NoteEntity>,
     (m.notebooksRepo ?? {}) as Repository<NotebookEntity>,
+    (m.refs ?? {}) as Repository<NoteReferenceEntity>,
     (m.notebooks ?? {}) as NotebooksService,
     (m.users ?? {}) as UsersService,
   );
@@ -162,6 +165,52 @@ describe("SharesService.resolve — phân quyền truy cập", () => {
     await expect(svc.resolve(TOKEN, null)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe("SharesService.resolveNote — share 1 note, lần theo liên kết @", () => {
+  const LINKED_ID = "44444444-4444-4444-4444-444444444444";
+  const UNLINKED_ID = "55555555-5555-5555-5555-555555555555";
+
+  it("cho xem note được liên kết (reachable) từ note gốc", async () => {
+    // refs.find: vòng 1 (from = note gốc) → có cạnh tới LINKED_ID; vòng 2
+    // (from = LINKED_ID) → hết cạnh.
+    const refsFind = jest
+      .fn()
+      .mockResolvedValueOnce([{ toNoteId: LINKED_ID }])
+      .mockResolvedValueOnce([]);
+    const svc = makeService({
+      shares: {
+        findOne: jest.fn().mockResolvedValue(shareEntity({ linkAccess: "view" })),
+      },
+      refs: { find: refsFind },
+      notesRepo: {
+        findOne: jest
+          .fn()
+          .mockResolvedValue(noteEntity({ id: LINKED_ID, title: "Ghi chú B" })),
+      },
+      notebooks: noLockedNotebooks,
+      users: { findById: jest.fn().mockResolvedValue({ name: "Nghiệp" }) },
+    });
+
+    const result = await svc.resolveNote(TOKEN, LINKED_ID, null);
+
+    expect(result.note.id).toBe(LINKED_ID);
+    expect(result.note.title).toBe("Ghi chú B");
+  });
+
+  it("note KHÔNG được liên kết tới → NotFound", async () => {
+    // Note gốc không có cạnh đi ra → chỉ chính nó reachable.
+    const svc = makeService({
+      shares: {
+        findOne: jest.fn().mockResolvedValue(shareEntity({ linkAccess: "view" })),
+      },
+      refs: { find: jest.fn().mockResolvedValue([]) },
+    });
+
+    await expect(
+      svc.resolveNote(TOKEN, UNLINKED_ID, null),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

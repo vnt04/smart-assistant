@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import type {
   Share,
   ShareLinkAccess,
@@ -18,6 +18,7 @@ import type {
 } from "@assistant/shared";
 import { UsersService } from "../users/users.service";
 import { NoteEntity } from "./entities/note.entity";
+import { NoteReferenceEntity } from "./entities/note-reference.entity";
 import { NotebookEntity } from "./entities/notebook.entity";
 import { ShareEntity } from "./entities/share.entity";
 import { ShareInviteEntity } from "./entities/share-invite.entity";
@@ -49,6 +50,8 @@ export class SharesService {
     private readonly notesRepo: Repository<NoteEntity>,
     @InjectRepository(NotebookEntity)
     private readonly notebooksRepo: Repository<NotebookEntity>,
+    @InjectRepository(NoteReferenceEntity)
+    private readonly refs: Repository<NoteReferenceEntity>,
     private readonly notebooks: NotebooksService,
     private readonly users: UsersService,
   ) {}
@@ -167,7 +170,13 @@ export class SharesService {
     const share = await this.resolveAccess(token, requesterEmail);
 
     if (share.resourceType === "note") {
-      if (noteId !== share.resourceId) throw shareNotFound();
+      // Cho phép lần theo liên kết (mention @) từ note gốc: người nhận xem được
+      // mọi note REACHABLE bằng cách đi theo cạnh from→to của note_references.
+      const reachable = await this.reachableNoteIds(
+        share.ownerUserId,
+        share.resourceId,
+      );
+      if (!reachable.has(noteId)) throw shareNotFound();
     } else {
       // Token notebook: note phải nằm trong cây notebook đã share.
       const ids = await this.notebooks.descendantIds(
@@ -189,6 +198,36 @@ export class SharesService {
   }
 
   // ---------------- Helpers ----------------
+
+  /**
+   * Tập note id xem được khi share MỘT note đơn: note gốc + mọi note lần tới được
+   * bằng cách đi theo liên kết (mention) theo chiều from→to, đệ quy. Chỉ theo
+   * liên kết ĐI RA (không gồm backlinks) để không lộ note mà chủ không chủ động
+   * trỏ tới. BFS có tập `reachable` nên an toàn với chu trình; bị chặn tự nhiên
+   * bởi tổng số note của chủ.
+   */
+  private async reachableNoteIds(
+    ownerUserId: string,
+    rootNoteId: string,
+  ): Promise<Set<string>> {
+    const reachable = new Set<string>([rootNoteId]);
+    let frontier = [rootNoteId];
+    while (frontier.length > 0) {
+      const rows = await this.refs.find({
+        where: { fromNoteId: In(frontier), userId: ownerUserId },
+        select: ["toNoteId"],
+      });
+      const next: string[] = [];
+      for (const row of rows) {
+        if (!reachable.has(row.toNoteId)) {
+          reachable.add(row.toNoteId);
+          next.push(row.toNoteId);
+        }
+      }
+      frontier = next;
+    }
+    return reachable;
+  }
 
   private async resolveAccess(
     token: string,
