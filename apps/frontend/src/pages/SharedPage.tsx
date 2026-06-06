@@ -117,7 +117,9 @@ interface ReadOnlyNoteProps {
 function ReadOnlyNote({ note, onOpenNote }: ReadOnlyNoteProps) {
   return (
     <article className="space-y-3">
-      <div className="space-y-1">
+      {/* Padding ngang khớp .editor-canvas (px-6 md:px-10) để title + ngày tháng
+          thẳng lề trái với nội dung bên dưới. */}
+      <div className="space-y-1 px-6 md:px-10">
         <h1 className="text-2xl font-semibold leading-tight">
           {note.title || "Không có tiêu đề"}
         </h1>
