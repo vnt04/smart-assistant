@@ -174,6 +174,12 @@
   .prose-app pre {
     @apply rounded-lg border border-border bg-muted/40 p-4 my-4 overflow-x-auto;
   }
+  /* Reset inline-code chip styling (bg/padding/rounded) for code INSIDE a code
+     block — the inline px-1.5 padding would otherwise indent only the first
+     line's first character. */
+  .prose-app pre code {
+    @apply bg-transparent p-0 rounded-none font-normal text-inherit;
+  }
   .prose-app mark {
     @apply text-foreground rounded-sm px-0.5;
     background-color: hsl(var(--dot-yellow) / 0.3);
