@@ -41,6 +41,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { SlashCommands } from "./slash-commands";
+import { NoteMention, type NoteRef } from "./note-mention";
 
 const lowlight = createLowlight(common);
 
@@ -51,6 +52,10 @@ interface NoteEditorProps {
   placeholder?: string;
   className?: string;
   editable?: boolean;
+  /** Tìm ghi chú cho dropdown mention `@`. Không truyền ⇒ tắt mention. */
+  searchNotes?: (query: string) => Promise<NoteRef[]>;
+  /** Mở ghi chú đích khi bấm vào một mention trong nội dung. */
+  onOpenNote?: (id: string) => void;
 }
 
 export function NoteEditor({
@@ -60,7 +65,20 @@ export function NoteEditor({
   placeholder = "Nhập / để mở menu lệnh…",
   className,
   editable = true,
+  searchNotes,
+  onOpenNote,
 }: NoteEditorProps) {
+  // Callback mention thay đổi theo note đang mở, nhưng mảng extensions chỉ dựng
+  // một lần lúc khởi tạo editor — giữ qua ref để node luôn gọi bản mới nhất.
+  const searchRef = useRef(searchNotes);
+  const onOpenRef = useRef(onOpenNote);
+  useEffect(() => {
+    searchRef.current = searchNotes;
+  }, [searchNotes]);
+  useEffect(() => {
+    onOpenRef.current = onOpenNote;
+  }, [onOpenNote]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -96,6 +114,10 @@ export function NoteEditor({
       TableHeader,
       TableCell,
       SlashCommands,
+      NoteMention.configure({
+        search: (query) => searchRef.current?.(query) ?? Promise.resolve([]),
+        onOpen: (id) => onOpenRef.current?.(id),
+      }),
     ],
     editorProps: {
       attributes: {

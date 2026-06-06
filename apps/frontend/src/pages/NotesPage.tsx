@@ -16,6 +16,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import type {
   CreateNotebookInput,
   Note,
+  NoteLink,
   Notebook,
   NoteSummary,
   ShareResourceType,
@@ -25,7 +26,9 @@ import type {
 import {
   ArrowLeft,
   ChevronDown,
+  FileText,
   FolderTree,
+  Link2,
   Lock,
   LockOpen,
   Paperclip,
@@ -40,6 +43,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { NoteEditor } from "../components/editor/note-editor";
+import type { NoteRef } from "../components/editor/note-mention";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -422,6 +426,7 @@ export function NotesPage() {
             autoFocus={selectedId === autoFocusNoteId}
             onBack={() => setMobileView("list")}
             onOpenExplorer={() => setExplorerSheetOpen(true)}
+            onOpenNote={handleSelectNote}
             onLockNote={handleLockNote}
             onUnlockNote={handleUnlockNote}
             onShareNote={(id) =>
@@ -480,6 +485,7 @@ interface NoteWorkspaceProps {
   onLockNote: (id: string) => void;
   onUnlockNote: (id: string) => void;
   onShareNote: (id: string) => void;
+  onOpenNote: (id: string) => void;
 }
 
 interface NoteGateOrWorkspaceProps extends NoteWorkspaceProps {
@@ -617,6 +623,7 @@ function NoteWorkspace({
   onLockNote,
   onUnlockNote,
   onShareNote,
+  onOpenNote,
 }: NoteWorkspaceProps) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -693,6 +700,17 @@ function NoteWorkspace({
       tags,
       isPinned,
     });
+
+  // Nguồn gợi ý cho mention `@`: tìm ghi chú theo tiêu đề, loại note hiện tại.
+  const searchNotes = useCallback(
+    async (q: string): Promise<NoteRef[]> => {
+      const res = await api.listNotes({ q: q || undefined, limit: 8 });
+      return res.items
+        .filter((n) => n.id !== note.id)
+        .map((n) => ({ id: n.id, title: n.title || "Chưa có tiêu đề" }));
+    },
+    [note.id],
+  );
 
   const addTag = (raw: string) => {
     const t = raw.trim().replace(/^#/, "").toLowerCase();
@@ -933,8 +951,31 @@ function NoteWorkspace({
         value={contentHtml}
         onChange={setContentHtml}
         onSave={save}
-        placeholder="Viết ghi chú… nhấn / để format"
+        searchNotes={searchNotes}
+        onOpenNote={onOpenNote}
+        placeholder="Viết ghi chú… nhấn / để format, @ để liên kết ghi chú khác"
       />
+
+      {(note.references.length > 0 || note.backlinks.length > 0) && (
+        <div className="space-y-3 border-t border-border bg-muted/30 px-4 py-3 md:px-8">
+          {note.references.length > 0 && (
+            <LinkGroup
+              label="Liên kết tới"
+              icon={Link2}
+              items={note.references}
+              onOpen={onOpenNote}
+            />
+          )}
+          {note.backlinks.length > 0 && (
+            <LinkGroup
+              label="Được nhắc tới ở"
+              icon={FileText}
+              items={note.backlinks}
+              onOpen={onOpenNote}
+            />
+          )}
+        </div>
+      )}
 
       {note.attachments.length > 0 && (
         <div className="border-t border-border bg-muted/30 px-4 py-3 md:px-8">
@@ -969,6 +1010,41 @@ function NoteWorkspace({
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+interface LinkGroupProps {
+  label: string;
+  icon: typeof FileText;
+  items: NoteLink[];
+  onOpen: (id: string) => void;
+}
+
+function LinkGroup({ label, icon: Icon, items, onOpen }: LinkGroupProps) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Icon className="h-3 w-3" />
+        {label}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {items.map((it) => (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(it.id)}
+              className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs leading-none hover:bg-muted"
+              title={it.title || "Chưa có tiêu đề"}
+            >
+              <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="truncate leading-trim">
+                {it.title || "Chưa có tiêu đề"}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

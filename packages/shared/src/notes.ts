@@ -15,6 +15,14 @@ export type Attachment = z.infer<typeof attachmentSchema>;
 const titleSchema = z.string().trim().min(1, "Tiêu đề không được trống").max(255);
 const contentHtmlSchema = z.string().max(2_000_000);
 
+// Liên kết nội bộ giữa các ghi chú (mention `@`): bản tóm tắt nhẹ chỉ gồm id +
+// tiêu đề, dùng cho danh sách "liên kết tới" và "được nhắc tới" (backlinks).
+export const noteLinkSchema = z.object({
+  id: idSchema,
+  title: z.string(),
+});
+export type NoteLink = z.infer<typeof noteLinkSchema>;
+
 export const noteSummarySchema = z.object({
   id: idSchema,
   notebookId: idSchema.nullable(),
@@ -42,6 +50,10 @@ export const noteSchema = z.object({
   updatedAt: isoDateTimeSchema,
   tags: z.array(tagSchema),
   attachments: z.array(attachmentSchema),
+  // Ghi chú mà note này trỏ tới (qua mention `@`) và những ghi chú đang trỏ ngược
+  // về note này. `.default([])` để response cũ / endpoint chưa kèm vẫn parse được.
+  references: z.array(noteLinkSchema).default([]),
+  backlinks: z.array(noteLinkSchema).default([]),
 });
 export type Note = z.infer<typeof noteSchema>;
 

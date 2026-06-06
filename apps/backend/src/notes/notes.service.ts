@@ -4,10 +4,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import type {
   CreateNoteInput,
   Note,
+  NoteLink,
   NoteListQuery,
   NoteListResponse,
   NoteSummary,
@@ -19,9 +20,16 @@ import { NotebooksService } from "./notebooks.service";
 import { TagsService } from "./tags.service";
 import { AttachmentEntity } from "./entities/attachment.entity";
 import { NoteEntity } from "./entities/note.entity";
+import { NoteReferenceEntity } from "./entities/note-reference.entity";
 import { ShareEntity } from "./entities/share.entity";
 import { TagEntity } from "./entities/tag.entity";
+import { extractNoteRefIds } from "./util/extract-note-refs";
 import { excerpt, htmlToText } from "./util/html-to-text";
+
+interface NoteLinks {
+  references: NoteLink[];
+  backlinks: NoteLink[];
+}
 
 const FT_MIN_TOKEN = 2;
 // Số ký tự content_text lấy từ DB để dựng excerpt. Phải >= excerpt() max (200)
@@ -51,6 +59,8 @@ export class NotesService {
   constructor(
     @InjectRepository(NoteEntity)
     private readonly notes: Repository<NoteEntity>,
+    @InjectRepository(NoteReferenceEntity)
+    private readonly refs: Repository<NoteReferenceEntity>,
     @InjectRepository(ShareEntity)
     private readonly shares: Repository<ShareEntity>,
     private readonly notebooks: NotebooksService,
@@ -202,7 +212,7 @@ export class NotesService {
     return byNote;
   }
 
-  /** Tải DTO đầy đủ (luôn kèm content + attachments), KHÔNG kiểm tra khóa. */
+  /** Tải DTO đầy đủ (luôn kèm content + attachments + liên kết), KHÔNG kiểm tra khóa. */
   private async loadFullDto(userId: string, id: string): Promise<Note> {
     const row = await this.notes.findOne({
       where: { id, userId },
@@ -214,7 +224,64 @@ export class NotesService {
         message: "Không tìm thấy ghi chú",
       });
     }
-    return toDto(row);
+    const links = await this.loadLinks(userId, id);
+    return toDto(row, links);
+  }
+
+  // "Liên kết tới" = các note mà note này trỏ tới; "backlinks" = các note trỏ
+  // ngược về note này. Cả hai join sang `notes` để lấy tiêu đề hiện tại và scope
+  // theo userId (phòng dữ liệu rác chéo người dùng).
+  private async loadLinks(userId: string, noteId: string): Promise<NoteLinks> {
+    const references = await this.refs
+      .createQueryBuilder("r")
+      .innerJoin(NoteEntity, "n", "n.id = r.to_note_id")
+      .select("n.id", "id")
+      .addSelect("n.title", "title")
+      .where("r.from_note_id = :noteId", { noteId })
+      .andWhere("n.user_id = :userId", { userId })
+      .orderBy("n.title", "ASC")
+      .getRawMany<NoteLink>();
+
+    const backlinks = await this.refs
+      .createQueryBuilder("r")
+      .innerJoin(NoteEntity, "n", "n.id = r.from_note_id")
+      .select("n.id", "id")
+      .addSelect("n.title", "title")
+      .where("r.to_note_id = :noteId", { noteId })
+      .andWhere("n.user_id = :userId", { userId })
+      .orderBy("n.title", "ASC")
+      .getRawMany<NoteLink>();
+
+    return { references, backlinks };
+  }
+
+  /**
+   * Đồng bộ bảng note_references cho note nguồn từ nội dung HTML vừa lưu: parse
+   * các mention, chỉ giữ id thật sự là note của user (bỏ self-reference), rồi
+   * thay toàn bộ liên kết cũ bằng tập mới. Idempotent.
+   */
+  private async syncReferences(
+    userId: string,
+    fromNoteId: string,
+    contentHtml: string,
+  ): Promise<void> {
+    const ids = extractNoteRefIds(contentHtml).filter(
+      (id) => id !== fromNoteId,
+    );
+    const valid = ids.length
+      ? (
+          await this.notes.find({
+            where: { id: In(ids), userId },
+            select: ["id"],
+          })
+        ).map((n) => n.id)
+      : [];
+
+    await this.refs.delete({ fromNoteId });
+    if (valid.length === 0) return;
+    await this.refs.insert(
+      valid.map((toNoteId) => ({ userId, fromNoteId, toNoteId })),
+    );
   }
 
   private async isEffectivelyLocked(
@@ -297,6 +364,7 @@ export class NotesService {
       tags,
     });
     const saved = await this.notes.save(entity);
+    await this.syncReferences(userId, saved.id, contentHtml);
     // loadFullDto (không che) để người vừa tạo — kể cả trong notebook bị khóa —
     // vẫn nhận đủ nội dung để soạn thảo ngay.
     return this.loadFullDto(userId, saved.id);
@@ -335,6 +403,7 @@ export class NotesService {
     }
 
     await this.notes.save(entity);
+    await this.syncReferences(userId, id, entity.contentHtml);
     // Trả nội dung đầy đủ (không che): auto-save sau khi reveal không bị mất content.
     return this.loadFullDto(userId, id);
   }
@@ -369,7 +438,7 @@ function tagToDto(t: TagEntity): Tag {
   };
 }
 
-function toDto(e: NoteEntity): Note {
+function toDto(e: NoteEntity, links: NoteLinks): Note {
   return {
     id: e.id,
     notebookId: e.notebookId,
@@ -389,6 +458,8 @@ function toDto(e: NoteEntity): Note {
       sizeBytes: a.sizeBytes,
       createdAt: a.createdAt.toISOString(),
     })),
+    references: links.references,
+    backlinks: links.backlinks,
   };
 }
 

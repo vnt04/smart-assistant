@@ -214,6 +214,18 @@
     @apply rounded-lg my-4 max-w-full;
   }
 
+  /* Mention liên kết ghi chú (@) — chip bấm được để mở ghi chú đích. */
+  .note-mention {
+    @apply inline cursor-pointer rounded px-1 font-medium;
+    color: hsl(var(--primary));
+    background-color: hsl(var(--accent));
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .note-mention:hover {
+    background-color: hsl(var(--accent) / 0.7);
+  }
+
   /* Tables */
   .prose-app .tableWrapper {
     @apply my-4 overflow-x-auto;

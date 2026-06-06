@@ -6,6 +6,7 @@ import { AttachmentsController } from "./attachments.controller";
 import { AttachmentsService } from "./attachments.service";
 import { AttachmentEntity } from "./entities/attachment.entity";
 import { NoteEntity } from "./entities/note.entity";
+import { NoteReferenceEntity } from "./entities/note-reference.entity";
 import { NotebookEntity } from "./entities/notebook.entity";
 import { ShareEntity } from "./entities/share.entity";
 import { ShareInviteEntity } from "./entities/share-invite.entity";
@@ -25,6 +26,7 @@ import { TagsService } from "./tags.service";
     TypeOrmModule.forFeature([
       NotebookEntity,
       NoteEntity,
+      NoteReferenceEntity,
       TagEntity,
       AttachmentEntity,
       ShareEntity,
