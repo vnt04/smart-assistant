@@ -6,6 +6,7 @@ import { UserSettingsEntity } from "../settings/user-settings.entity";
 import { RefreshTokenEntity } from "../auth/refresh-token.entity";
 import { NotebookEntity } from "../notes/entities/notebook.entity";
 import { NoteEntity } from "../notes/entities/note.entity";
+import { NoteReferenceEntity } from "../notes/entities/note-reference.entity";
 import { TagEntity } from "../notes/entities/tag.entity";
 import { AttachmentEntity } from "../notes/entities/attachment.entity";
 import { ShareEntity } from "../notes/entities/share.entity";
@@ -42,6 +43,7 @@ import { JobEntity } from "../jobs/entities/job.entity";
           RefreshTokenEntity,
           NotebookEntity,
           NoteEntity,
+          NoteReferenceEntity,
           TagEntity,
           AttachmentEntity,
           ShareEntity,
