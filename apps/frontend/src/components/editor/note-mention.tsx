@@ -5,6 +5,7 @@ import {
   type Editor,
 } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
+import { PluginKey } from "@tiptap/pm/state";
 import tippy, { type Instance as TippyInstance } from "tippy.js";
 import {
   forwardRef,
@@ -30,6 +31,12 @@ export interface NoteMentionOptions {
 }
 
 const MENTION_LABEL_FALLBACK = "ghi chú";
+
+// PluginKey RIÊNG cho mention. Bắt buộc: `@tiptap/suggestion` mặc định dùng chung
+// một PluginKey "suggestion" ở module-level; slash-commands cũng dùng mặc định đó,
+// nên nếu không tách key, ProseMirror sẽ ném "Adding different instances of a keyed
+// plugin (suggestion$)" và làm sập editor ngay khi khởi tạo.
+const NOTE_MENTION_PLUGIN_KEY = new PluginKey("noteMention");
 
 /**
  * Node inline (atom) biểu diễn một liên kết tới ghi chú khác. Serialize thành
@@ -122,6 +129,7 @@ export const NoteMention = Node.create<NoteMentionOptions>({
     return [
       Suggestion<NoteRef>({
         editor: this.editor,
+        pluginKey: NOTE_MENTION_PLUGIN_KEY,
         char: "@",
         allowSpaces: false,
         startOfLine: false,
