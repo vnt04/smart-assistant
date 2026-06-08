@@ -23,6 +23,10 @@ import { TableCell } from "@tiptap/extension-table-cell";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { common, createLowlight } from "lowlight";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Check,
   ChevronDown,
@@ -193,6 +197,10 @@ export function NoteEditor({
 
         <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
 
+        <AlignButtons editor={editor} />
+
+        <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
+
         <FontSizeControl editor={editor} />
 
         <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />
@@ -305,6 +313,48 @@ function BubbleBtn({
     >
       {children}
     </button>
+  );
+}
+
+/* -------------------- Text alignment -------------------- */
+
+const ALIGN_OPTIONS = [
+  { value: "left", title: "Căn trái", Icon: AlignLeft },
+  { value: "center", title: "Căn giữa", Icon: AlignCenter },
+  { value: "right", title: "Căn phải", Icon: AlignRight },
+  { value: "justify", title: "Căn đều hai bên", Icon: AlignJustify },
+] as const;
+
+function AlignButtons({ editor }: { editor: Editor }) {
+  const active = useEditorState({
+    editor,
+    selector: ({ editor }) => {
+      for (const { value } of ALIGN_OPTIONS) {
+        if (editor.isActive({ textAlign: value })) return value;
+      }
+      return null;
+    },
+  });
+
+  return (
+    <>
+      {ALIGN_OPTIONS.map(({ value, title, Icon }) => (
+        <button
+          key={value}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.chain().focus().setTextAlign(value).run()}
+          title={title}
+          aria-label={title}
+          className={cn(
+            "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+            active === value && "bg-accent text-accent-foreground",
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </button>
+      ))}
+    </>
   );
 }
 
@@ -444,6 +494,12 @@ function TableToolbar({ editor }: { editor: Editor }) {
         >
           <Minus className="h-3.5 w-3.5" />
         </TableBtn>
+      </TableGroup>
+
+      <span aria-hidden className="h-4 w-px bg-border" />
+
+      <TableGroup label="Căn lề">
+        <AlignButtons editor={editor} />
       </TableGroup>
 
       <span aria-hidden className="h-4 w-px bg-border" />
