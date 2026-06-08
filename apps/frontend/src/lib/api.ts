@@ -15,6 +15,9 @@ import {
   noteSchema,
   notebookSchema,
   reminderSchema,
+  shareSchema,
+  sharedNotePayloadSchema,
+  sharedResourceSchema,
   tagSchema,
   taskSchema,
   telegramTestSchema,
@@ -25,6 +28,7 @@ import {
   userSettingsSchema,
   trackVocabResponseSchema,
   vocabListResponseSchema,
+  jobListResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -63,6 +67,11 @@ import {
   type Reminder,
   type SendAiMessageInput,
   type SetNotesLockInput,
+  type Share,
+  type ShareLinkAccess,
+  type SharedNotePayload,
+  type SharedResource,
+  type ShareResourceType,
   type Tag,
   type Task,
   type TaskListQuery,
@@ -85,6 +94,7 @@ import {
   type UserProfile,
   type UserSettings,
   type VocabItem,
+  type Job,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -105,7 +115,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   auth?: boolean;
   signal?: AbortSignal;
@@ -397,6 +407,70 @@ export const api = {
 
   attachmentUrl: (id: string): string => `${API_BASE}/attachments/${id}`,
 
+  // Shares
+  getShare: async (
+    resourceType: ShareResourceType,
+    resourceId: string,
+  ): Promise<Share> =>
+    shareSchema.parse(await request(`/shares/${resourceType}/${resourceId}`)),
+
+  setShareLink: async (
+    resourceType: ShareResourceType,
+    resourceId: string,
+    linkAccess: ShareLinkAccess,
+  ): Promise<Share> =>
+    shareSchema.parse(
+      await request(`/shares/${resourceType}/${resourceId}/link`, {
+        method: "PUT",
+        body: { linkAccess },
+      }),
+    ),
+
+  addShareInvite: async (
+    resourceType: ShareResourceType,
+    resourceId: string,
+    email: string,
+  ): Promise<Share> =>
+    shareSchema.parse(
+      await request(`/shares/${resourceType}/${resourceId}/invites`, {
+        method: "POST",
+        body: { email },
+      }),
+    ),
+
+  removeShareInvite: async (
+    resourceType: ShareResourceType,
+    resourceId: string,
+    inviteId: string,
+  ): Promise<Share> =>
+    shareSchema.parse(
+      await request(
+        `/shares/${resourceType}/${resourceId}/invites/${inviteId}`,
+        { method: "DELETE" },
+      ),
+    ),
+
+  stopShare: async (
+    resourceType: ShareResourceType,
+    resourceId: string,
+  ): Promise<void> =>
+    request(`/shares/${resourceType}/${resourceId}`, { method: "DELETE" }),
+
+  // Public share resolution (recipient view). Token đính kèm Authorization nếu
+  // người dùng đã đăng nhập — để khớp email với share giới hạn theo email.
+  getSharedResource: async (token: string): Promise<SharedResource> =>
+    sharedResourceSchema.parse(
+      await request(`/share/${encodeURIComponent(token)}`),
+    ),
+
+  getSharedNote: async (
+    token: string,
+    noteId: string,
+  ): Promise<SharedNotePayload> =>
+    sharedNotePayloadSchema.parse(
+      await request(`/share/${encodeURIComponent(token)}/notes/${noteId}`),
+    ),
+
   // Events
   listEvents: async (query: EventListQuery = {}): Promise<EventDto[]> => {
     const qs = toQuery(query);
@@ -655,6 +729,13 @@ export const api = {
 
   deleteVocab: async (id: string): Promise<void> =>
     request(`/vocab/${id}`, { method: "DELETE", auth: false }),
+
+  // Jobs (public endpoint — n8n ingest qua POST; view dùng GET/DELETE)
+  listJobs: async (): Promise<Job[]> =>
+    jobListResponseSchema.parse(await request("/jobs", { auth: false })),
+
+  deleteJob: async (id: string): Promise<void> =>
+    request(`/jobs/${id}`, { method: "DELETE", auth: false }),
 };
 
 function toQuery(query: Record<string, unknown>): string {

@@ -25,6 +25,7 @@ import {
   Pin,
   Plus,
   Search,
+  Share2,
   Tag as TagIcon,
   Trash2,
   X,
@@ -85,6 +86,7 @@ export interface NotesExplorerProps {
   notebooksById: Map<string, Notebook>;
   onLockNotebook: (id: string) => void;
   onUnlockNotebook: (id: string) => void;
+  onShareNotebook: (id: string) => void;
 }
 
 interface FolderNode {
@@ -203,6 +205,7 @@ export function NotesExplorer({
   notebooksById,
   onLockNotebook,
   onUnlockNotebook,
+  onShareNotebook,
 }: NotesExplorerProps) {
   const confirm = useConfirm();
   const folderTree = useMemo(() => buildFolderTree(notebooks), [notebooks]);
@@ -552,6 +555,7 @@ export function NotesExplorer({
                 notebooksById={notebooksById}
                 onLockNotebook={onLockNotebook}
                 onUnlockNotebook={onUnlockNotebook}
+                onShareNotebook={onShareNotebook}
               />
             ))}
 
@@ -619,6 +623,7 @@ interface FolderRowProps {
   notebooksById: Map<string, Notebook>;
   onLockNotebook: (id: string) => void;
   onUnlockNotebook: (id: string) => void;
+  onShareNotebook: (id: string) => void;
 }
 
 function FolderRow({
@@ -645,6 +650,7 @@ function FolderRow({
   notebooksById,
   onLockNotebook,
   onUnlockNotebook,
+  onShareNotebook,
 }: FolderRowProps) {
   const dnd = useDnd();
   const { notebook } = node;
@@ -759,6 +765,7 @@ function FolderRow({
               onChangeColor={(c) => onChangeColor(notebook.id, c)}
               onLock={() => onLockNotebook(notebook.id)}
               onUnlock={() => onUnlockNotebook(notebook.id)}
+              onShare={() => onShareNotebook(notebook.id)}
               onDelete={() =>
                 void onRequestDeleteFolder(notebook, hasChildren)
               }
@@ -795,6 +802,7 @@ function FolderRow({
               notebooksById={notebooksById}
               onLockNotebook={onLockNotebook}
               onUnlockNotebook={onUnlockNotebook}
+              onShareNotebook={onShareNotebook}
             />
           ))}
 
@@ -949,6 +957,7 @@ interface FolderMenuProps {
   onChangeColor: (color: string | null) => void;
   onLock: () => void;
   onUnlock: () => void;
+  onShare: () => void;
   onDelete: () => void;
 }
 
@@ -960,6 +969,7 @@ function FolderMenu({
   onChangeColor,
   onLock,
   onUnlock,
+  onShare,
   onDelete,
 }: FolderMenuProps) {
   return (
@@ -1020,6 +1030,9 @@ function FolderMenu({
             <Lock className="h-3.5 w-3.5" />
           )}
           {isLocked ? "Bỏ khóa" : "Khóa thư mục"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onShare}>
+          <Share2 className="h-3.5 w-3.5" /> Chia sẻ
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

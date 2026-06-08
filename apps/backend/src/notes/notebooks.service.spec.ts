@@ -1,6 +1,7 @@
 import type { Repository } from "typeorm";
 import { SettingsService } from "../settings/settings.service";
 import { NotebookEntity } from "./entities/notebook.entity";
+import { ShareEntity } from "./entities/share.entity";
 import { NotebooksService } from "./notebooks.service";
 
 const USER_ID = "22222222-2222-2222-2222-222222222222";
@@ -11,8 +12,9 @@ function makeService(rows: Row[]): NotebooksService {
   const repo = {
     find: jest.fn().mockResolvedValue(rows),
   } as unknown as Repository<NotebookEntity>;
+  const shares = {} as unknown as Repository<ShareEntity>;
   const settings = {} as SettingsService;
-  return new NotebooksService(repo, settings);
+  return new NotebooksService(repo, shares, settings);
 }
 
 describe("NotebooksService.lockedNotebookIds", () => {

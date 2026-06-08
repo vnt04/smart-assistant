@@ -1,0 +1,6 @@
+{
+  "env": {
+    "ECC_GATEGUARD": "off",
+    "ECC_CONTEXT_MONITOR_COST_WARNINGS": "0"
+  }
+}

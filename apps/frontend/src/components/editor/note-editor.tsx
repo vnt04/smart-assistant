@@ -15,7 +15,6 @@ import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
@@ -45,6 +44,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { SlashCommands } from "./slash-commands";
+import { NoteMention, type NoteRef } from "./note-mention";
+import { CodeBlock } from "./code-block";
 
 const lowlight = createLowlight(common);
 
@@ -55,6 +56,10 @@ interface NoteEditorProps {
   placeholder?: string;
   className?: string;
   editable?: boolean;
+  /** Tìm ghi chú cho dropdown mention `@`. Không truyền ⇒ tắt mention. */
+  searchNotes?: (query: string) => Promise<NoteRef[]>;
+  /** Mở ghi chú đích khi bấm vào một mention trong nội dung. */
+  onOpenNote?: (id: string) => void;
 }
 
 export function NoteEditor({
@@ -64,7 +69,20 @@ export function NoteEditor({
   placeholder = "Nhập / để mở menu lệnh…",
   className,
   editable = true,
+  searchNotes,
+  onOpenNote,
 }: NoteEditorProps) {
+  // Callback mention thay đổi theo note đang mở, nhưng mảng extensions chỉ dựng
+  // một lần lúc khởi tạo editor — giữ qua ref để node luôn gọi bản mới nhất.
+  const searchRef = useRef(searchNotes);
+  const onOpenRef = useRef(onOpenNote);
+  useEffect(() => {
+    searchRef.current = searchNotes;
+  }, [searchNotes]);
+  useEffect(() => {
+    onOpenRef.current = onOpenNote;
+  }, [onOpenNote]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -94,12 +112,16 @@ export function NoteEditor({
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Highlight.configure({ multicolor: false }),
       Image.configure({ inline: false, allowBase64: true }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CodeBlock.configure({ lowlight }),
       Table.configure({ resizable: true, allowTableNodeSelection: true }),
       TableRow,
       TableHeader,
       TableCell,
       SlashCommands,
+      NoteMention.configure({
+        search: (query) => searchRef.current?.(query) ?? Promise.resolve([]),
+        onOpen: (id) => onOpenRef.current?.(id),
+      }),
     ],
     editorProps: {
       attributes: {

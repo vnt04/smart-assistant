@@ -18,6 +18,7 @@ import { NotesPage } from "./pages/NotesPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SchedulePage } from "./pages/SchedulePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SharedPage } from "./pages/SharedPage";
 import { VocabPage } from "./pages/VocabPage";
 import { GoogleCallbackPage } from "./pages/GoogleCallbackPage";
 
@@ -27,20 +28,36 @@ function RootLayout() {
   const { status } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isPublic = PUBLIC_PATHS.includes(pathname);
+  // Trang share công khai (/share/:token) truy cập được khi chưa đăng nhập và
+  // KHÔNG bị đá về /notes khi đã đăng nhập (người dùng vẫn cần xem link).
+  const isShare = pathname.startsWith("/share/");
+  const isPublic = PUBLIC_PATHS.includes(pathname) || isShare;
 
   useEffect(() => {
     if (status === "loading") return;
-    if (
-      status === "authenticated" &&
-      isPublic &&
-      pathname !== "/auth/callback"
-    ) {
+    if (status === "authenticated" && isPublic && !isShare) {
+      if (pathname === "/auth/callback") return;
+      // Sau khi đăng nhập từ trang share riêng tư, quay lại đúng liên kết đó.
+      let redirectTo: string | null = null;
+      try {
+        redirectTo = sessionStorage.getItem("postLoginRedirect");
+      } catch {
+        redirectTo = null;
+      }
+      if (redirectTo) {
+        try {
+          sessionStorage.removeItem("postLoginRedirect");
+        } catch {
+          // bỏ qua nếu sessionStorage không khả dụng
+        }
+        window.location.replace(redirectTo);
+        return;
+      }
       void navigate({ to: "/notes", replace: true });
     } else if (status === "unauthenticated" && !isPublic) {
       void navigate({ to: "/login", replace: true });
     }
-  }, [status, isPublic, pathname, navigate]);
+  }, [status, isPublic, isShare, pathname, navigate]);
 
   if (status === "loading") {
     return (
@@ -143,6 +160,12 @@ const googleCallbackRoute = new Route({
   component: GoogleCallbackPage,
 });
 
+const sharedRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/share/$token",
+  component: SharedPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -155,6 +178,7 @@ const routeTree = rootRoute.addChildren([
   assistantRoute,
   settingsRoute,
   googleCallbackRoute,
+  sharedRoute,
 ]);
 
 export const router = new Router({ routeTree });

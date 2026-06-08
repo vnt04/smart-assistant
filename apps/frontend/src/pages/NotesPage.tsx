@@ -16,21 +16,26 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import type {
   CreateNotebookInput,
   Note,
+  NoteLink,
   Notebook,
   NoteSummary,
+  ShareResourceType,
   UpdateNoteInput,
   UpdateNotebookInput,
 } from "@assistant/shared";
 import {
   ArrowLeft,
   ChevronDown,
+  FileText,
   FolderTree,
+  Link2,
   Lock,
   LockOpen,
   Paperclip,
   Pin,
   PinOff,
   Plus,
+  Share2,
   Star,
   Trash2,
   X,
@@ -38,6 +43,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { NoteEditor } from "../components/editor/note-editor";
+import type { NoteRef } from "../components/editor/note-mention";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +59,7 @@ import {
 import { useConfirm } from "../components/ui/confirm-dialog";
 import { usePasswordPrompt } from "../components/ui/password-prompt";
 import { NotesExplorer } from "../components/notes/notes-explorer";
+import { ShareDialog } from "../components/notes/share-dialog";
 import { api, ApiError } from "../lib/api";
 import { cn } from "../lib/cn";
 import { isNoteEffectivelyLocked, notebooksById } from "../lib/note-lock";
@@ -87,6 +94,11 @@ export function NotesPage() {
     routeNoteId ? "editor" : "list",
   );
   const [explorerSheetOpen, setExplorerSheetOpen] = useState(false);
+  const [shareTarget, setShareTarget] = useState<{
+    type: ShareResourceType;
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedQ(searchInput.trim()), 300);
@@ -368,6 +380,10 @@ export function NotesPage() {
       notebooksById={nbById}
       onLockNotebook={handleLockNotebook}
       onUnlockNotebook={handleUnlockNotebook}
+      onShareNotebook={(id) => {
+        const nb = nbById.get(id);
+        setShareTarget({ type: "notebook", id, name: nb?.name ?? "Notebook" });
+      }}
     />
   );
 
@@ -410,8 +426,16 @@ export function NotesPage() {
             autoFocus={selectedId === autoFocusNoteId}
             onBack={() => setMobileView("list")}
             onOpenExplorer={() => setExplorerSheetOpen(true)}
+            onOpenNote={handleSelectNote}
             onLockNote={handleLockNote}
             onUnlockNote={handleUnlockNote}
+            onShareNote={(id) =>
+              setShareTarget({
+                type: "note",
+                id,
+                name: selectedQuery.data?.title || "Ghi chú",
+              })
+            }
             onSaved={(note) => {
               qc.setQueryData(["note", note.id], note);
               invalidateLists();
@@ -432,6 +456,18 @@ export function NotesPage() {
           <EmptyState onCreate={() => void handleCreateNote(null)} />
         )}
       </main>
+
+      {shareTarget && (
+        <ShareDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setShareTarget(null);
+          }}
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={shareTarget.name}
+        />
+      )}
     </section>
   );
 }
@@ -448,6 +484,8 @@ interface NoteWorkspaceProps {
   onOpenExplorer: () => void;
   onLockNote: (id: string) => void;
   onUnlockNote: (id: string) => void;
+  onShareNote: (id: string) => void;
+  onOpenNote: (id: string) => void;
 }
 
 interface NoteGateOrWorkspaceProps extends NoteWorkspaceProps {
@@ -584,6 +622,8 @@ function NoteWorkspace({
   onOpenExplorer,
   onLockNote,
   onUnlockNote,
+  onShareNote,
+  onOpenNote,
 }: NoteWorkspaceProps) {
   const qc = useQueryClient();
   const confirm = useConfirm();
@@ -660,6 +700,17 @@ function NoteWorkspace({
       tags,
       isPinned,
     });
+
+  // Nguồn gợi ý cho mention `@`: tìm ghi chú theo tiêu đề, loại note hiện tại.
+  const searchNotes = useCallback(
+    async (q: string): Promise<NoteRef[]> => {
+      const res = await api.listNotes({ q: q || undefined, limit: 8 });
+      return res.items
+        .filter((n) => n.id !== note.id)
+        .map((n) => ({ id: n.id, title: n.title || "Chưa có tiêu đề" }));
+    },
+    [note.id],
+  );
 
   const addTag = (raw: string) => {
     const t = raw.trim().replace(/^#/, "").toLowerCase();
@@ -774,6 +825,15 @@ function NoteWorkspace({
                   ? `Đã lưu ${formatRelative(savedAt.toISOString())}`
                   : "Đã lưu"}
           </span>
+          <button
+            type="button"
+            onClick={() => onShareNote(note.id)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+            title="Chia sẻ ghi chú"
+            aria-label="Chia sẻ ghi chú"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() =>
@@ -891,8 +951,31 @@ function NoteWorkspace({
         value={contentHtml}
         onChange={setContentHtml}
         onSave={save}
-        placeholder="Viết ghi chú… nhấn / để format"
+        searchNotes={searchNotes}
+        onOpenNote={onOpenNote}
+        placeholder="Viết ghi chú… nhấn / để format, @ để liên kết ghi chú khác"
       />
+
+      {(note.references.length > 0 || note.backlinks.length > 0) && (
+        <div className="space-y-3 border-t border-border bg-muted/30 px-4 py-3 md:px-8">
+          {note.references.length > 0 && (
+            <LinkGroup
+              label="Liên kết tới"
+              icon={Link2}
+              items={note.references}
+              onOpen={onOpenNote}
+            />
+          )}
+          {note.backlinks.length > 0 && (
+            <LinkGroup
+              label="Được nhắc tới ở"
+              icon={FileText}
+              items={note.backlinks}
+              onOpen={onOpenNote}
+            />
+          )}
+        </div>
+      )}
 
       {note.attachments.length > 0 && (
         <div className="border-t border-border bg-muted/30 px-4 py-3 md:px-8">
@@ -927,6 +1010,41 @@ function NoteWorkspace({
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+interface LinkGroupProps {
+  label: string;
+  icon: typeof FileText;
+  items: NoteLink[];
+  onOpen: (id: string) => void;
+}
+
+function LinkGroup({ label, icon: Icon, items, onOpen }: LinkGroupProps) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Icon className="h-3 w-3" />
+        {label}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {items.map((it) => (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(it.id)}
+              className="inline-flex h-7 max-w-[240px] items-center gap-1.5 rounded-md border border-border bg-card px-2 text-xs leading-none hover:bg-muted"
+              title={it.title || "Chưa có tiêu đề"}
+            >
+              <FileText className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="truncate leading-trim">
+                {it.title || "Chưa có tiêu đề"}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

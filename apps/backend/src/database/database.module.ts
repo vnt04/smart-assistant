@@ -6,8 +6,11 @@ import { UserSettingsEntity } from "../settings/user-settings.entity";
 import { RefreshTokenEntity } from "../auth/refresh-token.entity";
 import { NotebookEntity } from "../notes/entities/notebook.entity";
 import { NoteEntity } from "../notes/entities/note.entity";
+import { NoteReferenceEntity } from "../notes/entities/note-reference.entity";
 import { TagEntity } from "../notes/entities/tag.entity";
 import { AttachmentEntity } from "../notes/entities/attachment.entity";
+import { ShareEntity } from "../notes/entities/share.entity";
+import { ShareInviteEntity } from "../notes/entities/share-invite.entity";
 import { EventEntity } from "../schedule/entities/event.entity";
 import { TaskEntity } from "../schedule/entities/task.entity";
 import { ReminderEntity } from "../schedule/entities/reminder.entity";
@@ -16,6 +19,7 @@ import { CategoryEntity } from "../expense/entities/category.entity";
 import { TransactionEntity } from "../expense/entities/transaction.entity";
 import { BudgetEntity } from "../expense/entities/budget.entity";
 import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
+import { JobEntity } from "../jobs/entities/job.entity";
 
 @Module({
   imports: [
@@ -39,8 +43,11 @@ import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
           RefreshTokenEntity,
           NotebookEntity,
           NoteEntity,
+          NoteReferenceEntity,
           TagEntity,
           AttachmentEntity,
+          ShareEntity,
+          ShareInviteEntity,
           EventEntity,
           TaskEntity,
           ReminderEntity,
@@ -49,6 +56,7 @@ import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
           TransactionEntity,
           BudgetEntity,
           VocabItemEntity,
+          JobEntity,
         ],
         logging:
           config.get<string>("NODE_ENV") === "development"
