@@ -20,6 +20,7 @@ import { TransactionEntity } from "../expense/entities/transaction.entity";
 import { BudgetEntity } from "../expense/entities/budget.entity";
 import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
 import { JobEntity } from "../jobs/entities/job.entity";
+import { TechnologyEntity } from "../jobs/entities/technology.entity";
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { JobEntity } from "../jobs/entities/job.entity";
           BudgetEntity,
           VocabItemEntity,
           JobEntity,
+          TechnologyEntity,
         ],
         logging:
           config.get<string>("NODE_ENV") === "development"
