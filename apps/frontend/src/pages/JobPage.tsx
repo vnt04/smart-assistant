@@ -1,6 +1,20 @@
-import { useMemo, useState, type ComponentType, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Job, TechFacet } from "@assistant/shared";
+import {
+  DEFAULT_JOB_MATCH_PROFILE,
+  scoreJob,
+  type Job,
+  type JobMatchProfile,
+  type JobMatchResult,
+  type TechFacet,
+} from "@assistant/shared";
 import {
   BarChart3,
   Briefcase,
@@ -16,6 +30,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Target,
   Trash2,
   Users,
   Wallet,
@@ -25,11 +40,12 @@ import { Button } from "../components/ui/button";
 import { useConfirm } from "../components/ui/confirm-dialog";
 import { Input } from "../components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
+import { MatchBadge } from "../components/jobs/MatchBadge";
+import { MatchProfileEditor } from "../components/jobs/MatchProfileEditor";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 
-type SortKey = "crawl" | "fit" | "posted" | "salary";
-type FitTier = "high" | "mid" | "low";
+type SortKey = "match" | "crawl" | "posted" | "salary";
 
 interface CountOption {
   value: string;
@@ -43,8 +59,8 @@ interface SearchOption {
 }
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "match", label: "Phù hợp với tôi" },
   { value: "crawl", label: "Mới crawl" },
-  { value: "fit", label: "Độ phù hợp" },
   { value: "posted", label: "Mới đăng" },
   { value: "salary", label: "Lương cao" },
 ];
@@ -63,30 +79,34 @@ const POSTED_OPTIONS: { value: string; label: string }[] = [
   { value: "30", label: "30 ngày qua" },
 ];
 
-const FIT_OPTIONS: { value: number; label: string }[] = [
-  { value: 70, label: "Rất phù hợp (≥70%)" },
-  { value: 40, label: "Khá phù hợp (≥40%)" },
+/** Ngưỡng điểm nhanh ở rail (lọc theo barem cá nhân). */
+const MIN_SCORE_PILLS: { value: number; label: string }[] = [
+  { value: 80, label: "≥ 80%" },
+  { value: 60, label: "≥ 60%" },
+  { value: 40, label: "≥ 40%" },
 ];
 
 export function JobPage() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
 
-  // `now` cố định trong suốt phiên xem để bộ lọc "ngày đăng" và thống kê ổn định.
+  // `now` cố định trong suốt phiên xem để bộ lọc "ngày đăng", độ mới và thống kê
+  // ổn định, không nhảy số khi component re-render.
   const [now] = useState(() => Date.now());
 
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("crawl");
+  const sortTouched = useRef(false);
   const [levels, setLevels] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [sources, setSources] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [salary, setSalary] = useState("");
   const [posted, setPosted] = useState("");
-  const [fitMin, setFitMin] = useState(0);
   const [selectedTech, setSelectedTech] = useState<string[]>([]);
   const [showStats, setShowStats] = useState(false);
   const [selected, setSelected] = useState<Job | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const jobsQuery = useQuery({
     queryKey: ["jobs", selectedTech],
@@ -95,6 +115,31 @@ export function JobPage() {
   const facetsQuery = useQuery({
     queryKey: ["job-tech-facets"],
     queryFn: api.listTechFacets,
+  });
+  const matchQuery = useQuery({
+    queryKey: ["job-match-profile"],
+    queryFn: api.getJobMatchProfile,
+  });
+
+  // Barem chỉnh sửa cục bộ (live preview); seed một lần từ server khi tải xong.
+  const [profileDraft, setProfileDraft] = useState<JobMatchProfile | null>(null);
+  useEffect(() => {
+    if (matchQuery.data && profileDraft === null) setProfileDraft(matchQuery.data);
+  }, [matchQuery.data, profileDraft]);
+
+  const savedProfile = matchQuery.data ?? null;
+  const profile = profileDraft ?? savedProfile ?? DEFAULT_JOB_MATCH_PROFILE;
+  const matchEnabled = profile.enabled;
+  const isDirty =
+    JSON.stringify(profile) !==
+    JSON.stringify(savedProfile ?? DEFAULT_JOB_MATCH_PROFILE);
+
+  const saveMutation = useMutation({
+    mutationFn: api.updateJobMatchProfile,
+    onSuccess: (saved) => {
+      setProfileDraft(saved);
+      queryClient.setQueryData(["job-match-profile"], saved);
+    },
   });
 
   const deleteMutation = useMutation({
@@ -108,6 +153,20 @@ export function JobPage() {
 
   const jobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data]);
   const facets = facetsQuery.data ?? [];
+
+  // Đổi barem → nếu vừa bật matching và user chưa tự đổi sort, ưu tiên sort theo điểm.
+  function handleProfileChange(next: JobMatchProfile): void {
+    if (next.enabled && !profile.enabled && !sortTouched.current) setSort("match");
+    setProfileDraft(next);
+  }
+
+  const scoredById = useMemo(() => {
+    const map = new Map<string, JobMatchResult>();
+    if (matchEnabled) {
+      for (const job of jobs) map.set(job.id, scoreJob(job, profile, now));
+    }
+    return map;
+  }, [jobs, profile, matchEnabled, now]);
 
   const levelOptions = useMemo(() => countBy(jobs, (j) => j.level), [jobs]);
   const typeOptions = useMemo(
@@ -126,6 +185,9 @@ export function JobPage() {
   const toggleLocation = (v: string) => toggleIn(setLocations, v);
   const toggleTech = (v: string) => toggleIn(setSelectedTech, v);
 
+  const setMinScore = (value: number | null) =>
+    handleProfileChange({ ...profile, minScore: value });
+
   function clearAll(): void {
     setLevels([]);
     setTypes([]);
@@ -133,13 +195,14 @@ export function JobPage() {
     setLocations([]);
     setSalary("");
     setPosted("");
-    setFitMin(0);
     setSelectedTech([]);
+    if (profile.minScore != null) setMinScore(null);
   }
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     const result = jobs.filter((job) => {
+      if (matchEnabled && scoredById.get(job.id)?.hidden) return false;
       if (levels.length && (!job.level || !levels.includes(job.level)))
         return false;
       if (
@@ -152,7 +215,6 @@ export function JobPage() {
         return false;
       if (salary && salaryBucketOf(job) !== salary) return false;
       if (posted && !withinDays(job, Number(posted), now)) return false;
-      if (fitMin && (job.fitScore ?? 0) < fitMin) return false;
       if (!query) return true;
       return (
         job.title.toLowerCase().includes(query) ||
@@ -161,10 +223,34 @@ export function JobPage() {
         job.techStack.some((t) => t.toLowerCase().includes(query))
       );
     });
-    return sortJobs(result, sort);
-  }, [jobs, search, levels, types, sources, locations, salary, posted, fitMin, sort, now]);
 
-  const stats = useMemo(() => computeStats(filtered, now), [filtered, now]);
+    if (sort === "match" && matchEnabled) {
+      return [...result].sort(
+        (a, b) =>
+          (scoredById.get(b.id)?.score ?? -1) -
+          (scoredById.get(a.id)?.score ?? -1),
+      );
+    }
+    return sortJobs(result, sort);
+  }, [
+    jobs,
+    search,
+    levels,
+    types,
+    sources,
+    locations,
+    salary,
+    posted,
+    sort,
+    now,
+    matchEnabled,
+    scoredById,
+  ]);
+
+  const stats = useMemo(
+    () => computeStats(filtered, now, scoredById, matchEnabled),
+    [filtered, now, scoredById, matchEnabled],
+  );
 
   const techNameOf = useMemo(() => {
     const map = new Map(facets.map((f) => [f.slug, f.name]));
@@ -187,11 +273,7 @@ export function JobPage() {
       }),
     );
     locations.forEach((v) =>
-      chips.push({
-        key: `lo:${v}`,
-        label: v,
-        onRemove: () => toggleLocation(v),
-      }),
+      chips.push({ key: `lo:${v}`, label: v, onRemove: () => toggleLocation(v) }),
     );
     if (salary)
       chips.push({
@@ -205,11 +287,11 @@ export function JobPage() {
         label: POSTED_OPTIONS.find((p) => p.value === posted)?.label ?? posted,
         onRemove: () => setPosted(""),
       });
-    if (fitMin)
+    if (matchEnabled && profile.minScore != null)
       chips.push({
-        key: "fit",
-        label: FIT_OPTIONS.find((f) => f.value === fitMin)?.label ?? `≥${fitMin}%`,
-        onRemove: () => setFitMin(0),
+        key: "ms",
+        label: `Điểm ≥ ${profile.minScore}%`,
+        onRemove: () => setMinScore(null),
       });
     selectedTech.forEach((slug) =>
       chips.push({
@@ -220,7 +302,18 @@ export function JobPage() {
     );
     return chips;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levels, types, sources, locations, salary, posted, fitMin, selectedTech, techNameOf]);
+  }, [
+    levels,
+    types,
+    sources,
+    locations,
+    salary,
+    posted,
+    matchEnabled,
+    profile.minScore,
+    selectedTech,
+    techNameOf,
+  ]);
 
   const hasFilter = activeChips.length > 0;
 
@@ -235,6 +328,10 @@ export function JobPage() {
   }
 
   const hasJobs = jobs.length > 0;
+  const sortOptions = matchEnabled
+    ? SORT_OPTIONS
+    : SORT_OPTIONS.filter((o) => o.value !== "match");
+  const sortValue = matchEnabled ? sort : sort === "match" ? "crawl" : sort;
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -256,7 +353,7 @@ export function JobPage() {
           </div>
         </header>
 
-        {/* Thanh công cụ: tìm kiếm + sắp xếp + thống kê */}
+        {/* Thanh công cụ: tìm kiếm + sắp xếp + barem + thống kê */}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -270,27 +367,29 @@ export function JobPage() {
           </div>
           <div className="flex items-center gap-2">
             <FilterSelect
-              value={sort}
-              onChange={(v) => setSort(v as SortKey)}
+              value={sortValue}
+              onChange={(v) => {
+                sortTouched.current = true;
+                setSort(v as SortKey);
+              }}
               ariaLabel="Sắp xếp"
-              options={SORT_OPTIONS.map((o) => o.value)}
+              options={sortOptions.map((o) => o.value)}
               renderLabel={(v) =>
                 SORT_OPTIONS.find((o) => o.value === v)?.label ?? v
               }
             />
-            <button
-              type="button"
+            <ToolbarToggle
+              icon={Target}
+              active={matchEnabled}
+              onClick={() => setEditorOpen(true)}
+              label={matchEnabled ? "Barem · bật" : "Barem"}
+            />
+            <ToolbarToggle
+              icon={BarChart3}
+              active={showStats}
               onClick={() => setShowStats((s) => !s)}
-              aria-pressed={showStats}
-              className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors",
-                showStats
-                  ? "border-dot-orange/30 bg-dot-orange/10 text-dot-orange"
-                  : "border-input bg-background text-foreground hover:bg-accent",
-              )}
-            >
-              <BarChart3 className="h-4 w-4" /> Thống kê
-            </button>
+              label="Thống kê"
+            />
           </div>
         </div>
 
@@ -299,6 +398,10 @@ export function JobPage() {
             <FilterRail
               activeCount={activeChips.length}
               onClearAll={clearAll}
+              matchEnabled={matchEnabled}
+              onOpenEditor={() => setEditorOpen(true)}
+              minScore={profile.minScore}
+              onMinScoreChange={setMinScore}
               levelOptions={levelOptions}
               levels={levels}
               onToggleLevel={toggleLevel}
@@ -315,8 +418,6 @@ export function JobPage() {
               onSalaryChange={setSalary}
               posted={posted}
               onPostedChange={setPosted}
-              fitMin={fitMin}
-              onFitChange={setFitMin}
               facets={facets}
               selectedTech={selectedTech}
               onToggleTech={toggleTech}
@@ -358,6 +459,7 @@ export function JobPage() {
                       <JobCard
                         key={job.id}
                         job={job}
+                        match={matchEnabled ? scoredById.get(job.id) ?? null : null}
                         delayMs={Math.min(index * 30, 240)}
                         onOpen={() => setSelected(job)}
                       />
@@ -383,12 +485,30 @@ export function JobPage() {
           {selected && (
             <JobDetail
               job={selected}
+              match={
+                matchEnabled ? scoredById.get(selected.id) ?? null : null
+              }
               onDelete={() => handleDelete(selected)}
               isDeleting={deleteMutation.isPending}
             />
           )}
         </SheetContent>
       </Sheet>
+
+      <MatchProfileEditor
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
+        profile={profile}
+        onChange={handleProfileChange}
+        onSave={() => saveMutation.mutate(profile)}
+        onReset={() => handleProfileChange(DEFAULT_JOB_MATCH_PROFILE)}
+        isSaving={saveMutation.isPending}
+        isDirty={isDirty}
+        facets={facets}
+        levelOptions={levelOptions.map((o) => o.value)}
+        typeOptions={typeOptions.map((o) => o.value)}
+        locationOptions={locationOptions.map((o) => o.value)}
+      />
     </div>
   );
 }
@@ -398,6 +518,10 @@ export function JobPage() {
 interface FilterRailProps {
   activeCount: number;
   onClearAll: () => void;
+  matchEnabled: boolean;
+  onOpenEditor: () => void;
+  minScore: number | null;
+  onMinScoreChange: (value: number | null) => void;
   levelOptions: CountOption[];
   levels: string[];
   onToggleLevel: (value: string) => void;
@@ -414,8 +538,6 @@ interface FilterRailProps {
   onSalaryChange: (value: string) => void;
   posted: string;
   onPostedChange: (value: string) => void;
-  fitMin: number;
-  onFitChange: (value: number) => void;
   facets: TechFacet[];
   selectedTech: string[];
   onToggleTech: (value: string) => void;
@@ -462,6 +584,46 @@ function FilterRail(props: FilterRailProps) {
       </div>
 
       <div className={cn(open ? "block" : "hidden", "lg:block")}>
+        <FilterSection title="Phù hợp với tôi">
+          <button
+            type="button"
+            onClick={props.onOpenEditor}
+            className={cn(
+              "flex w-full items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
+              props.matchEnabled
+                ? "border-dot-orange/30 bg-dot-orange/10 text-dot-orange"
+                : "border-input bg-background text-foreground hover:bg-accent",
+            )}
+          >
+            <Target className="h-3.5 w-3.5" /> Thiết lập barem
+          </button>
+          {props.matchEnabled ? (
+            <div className="mt-2.5">
+              <p className="mb-1.5 text-2xs font-medium text-muted-foreground">
+                Chỉ hiện job đạt điểm
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {MIN_SCORE_PILLS.map((p) => (
+                  <FilterPill
+                    key={p.value}
+                    active={props.minScore === p.value}
+                    label={p.label}
+                    onClick={() =>
+                      props.onMinScoreChange(
+                        props.minScore === p.value ? null : p.value,
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-2xs text-muted-foreground">
+              Chưa bật — mở thiết lập để cá nhân hóa thứ tự job.
+            </p>
+          )}
+        </FilterSection>
+
         {props.levelOptions.length > 0 && (
           <FilterSection title="Cấp bậc">
             <PillGroup
@@ -496,21 +658,6 @@ function FilterRail(props: FilterRailProps) {
             value={props.posted}
             onChange={props.onPostedChange}
           />
-        </FilterSection>
-
-        <FilterSection title="Độ phù hợp">
-          <div className="flex flex-wrap gap-1.5">
-            {FIT_OPTIONS.map((o) => (
-              <FilterPill
-                key={o.value}
-                active={props.fitMin === o.value}
-                label={o.label}
-                onClick={() =>
-                  props.onFitChange(props.fitMin === o.value ? 0 : o.value)
-                }
-              />
-            ))}
-          </div>
         </FilterSection>
 
         {props.sourceOptions.length > 1 && (
@@ -795,8 +942,9 @@ interface Stats {
   new7: number;
   withSalaryCount: number;
   medianSalary: number;
-  avgFit: number;
-  highFit: number;
+  matchEnabled: boolean;
+  matchAvg: number;
+  matchTop: number;
   byLevel: CountOption[];
   bySource: CountOption[];
   topCompanies: CountOption[];
@@ -839,9 +987,15 @@ function StatsBar({ stats, filtered }: { stats: Stats; filtered: boolean }) {
       <MetricCard
         icon={Sparkles}
         tone="purple"
-        value={stats.avgFit > 0 ? `${stats.avgFit}%` : "—"}
+        value={
+          stats.matchEnabled && stats.matchAvg > 0 ? `${stats.matchAvg}%` : "—"
+        }
         label={
-          stats.highFit > 0 ? `Phù hợp TB · ${stats.highFit} ≥70%` : "Phù hợp TB"
+          stats.matchEnabled
+            ? stats.matchTop > 0
+              ? `Phù hợp TB · ${stats.matchTop} rất phù hợp`
+              : "Phù hợp trung bình"
+            : "Chưa bật barem"
         }
       />
     </div>
@@ -938,13 +1092,20 @@ function DistList({
 
 function JobCard({
   job,
+  match,
   delayMs,
   onOpen,
 }: {
   job: Job;
+  match: JobMatchResult | null;
   delayMs: number;
   onOpen: () => void;
 }) {
+  const matchedTechs = useMemo(
+    () => new Set(match?.matchedTechs ?? []),
+    [match],
+  );
+
   return (
     <button
       type="button"
@@ -960,9 +1121,7 @@ function JobCard({
             <span className="truncate">{job.company || "—"}</span>
           </div>
         </div>
-        {typeof job.fitScore === "number" && job.fitScore > 0 && (
-          <FitBadge score={job.fitScore} />
-        )}
+        {match && <MatchBadge score={match.score} tier={match.tier} />}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -992,14 +1151,22 @@ function JobCard({
 
       {job.techStack.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {job.techStack.slice(0, 5).map((tech) => (
-            <span
-              key={tech}
-              className="rounded-md bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
-            >
-              {tech}
-            </span>
-          ))}
+          {job.techStack.slice(0, 5).map((tech, i) => {
+            const matched = matchedTechs.has(job.techSlugs[i]);
+            return (
+              <span
+                key={tech}
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-2xs font-medium",
+                  matched
+                    ? "bg-dot-green/15 text-dot-green"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {tech}
+              </span>
+            );
+          })}
           {job.techStack.length > 5 && (
             <span className="rounded-md px-1.5 py-0.5 text-2xs text-muted-foreground/70">
               +{job.techStack.length - 5}
@@ -1015,15 +1182,18 @@ function JobCard({
 
 function JobDetail({
   job,
+  match,
   onDelete,
   isDeleting,
 }: {
   job: Job;
+  match: JobMatchResult | null;
   onDelete: () => void;
   isDeleting: boolean;
 }) {
   const postedAt = formatDate(job.postedAt);
   const deadline = formatDate(job.deadline);
+  const matchedTechs = new Set(match?.matchedTechs ?? []);
 
   return (
     <>
@@ -1032,6 +1202,9 @@ function JobDetail({
           <SourcePill source={job.source} />
           {job.level && <Pill>{job.level}</Pill>}
           {job.employmentType && <Pill>{job.employmentType}</Pill>}
+          {match && (
+            <MatchBadge score={match.score} tier={match.tier} className="ml-auto" />
+          )}
         </div>
         <SheetTitle className="mt-2 text-xl leading-snug">{job.title}</SheetTitle>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -1053,14 +1226,6 @@ function JobDetail({
           <InfoTile label="Mức lương">
             {formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency)}
           </InfoTile>
-          {typeof job.fitScore === "number" && job.fitScore > 0 && (
-            <InfoTile label="Độ phù hợp">
-              <span className="inline-flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-dot-orange" />
-                {job.fitScore}%
-              </span>
-            </InfoTile>
-          )}
           {postedAt && (
             <InfoTile label="Ngày đăng">
               <span className="inline-flex items-center gap-1.5">
@@ -1087,25 +1252,52 @@ function JobDetail({
           )}
         </div>
 
-        {job.fitReason && (
+        {match && match.breakdown.length > 0 && (
           <Section title="Vì sao phù hợp">
-            <p className="whitespace-pre-line text-sm text-muted-foreground">
-              {job.fitReason}
-            </p>
+            <ul className="space-y-1.5">
+              {match.breakdown.map((item) => (
+                <li
+                  key={item.key}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    <span className="text-foreground/80">{item.label}</span>
+                    {" · "}
+                    {item.detail}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 font-semibold tabular-nums",
+                      item.points < 0 ? "text-destructive" : "text-dot-green",
+                    )}
+                  >
+                    {item.points >= 0 ? `+${item.points}` : item.points}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Section>
         )}
 
         {job.techStack.length > 0 && (
           <Section title="Công nghệ">
             <div className="flex flex-wrap gap-1.5">
-              {job.techStack.map((tech) => (
-                <span
-                  key={tech}
-                  className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground/80"
-                >
-                  {tech}
-                </span>
-              ))}
+              {job.techStack.map((tech, i) => {
+                const matched = matchedTechs.has(job.techSlugs[i]);
+                return (
+                  <span
+                    key={tech}
+                    className={cn(
+                      "rounded-md px-2 py-1 text-xs font-medium",
+                      matched
+                        ? "bg-dot-green/15 text-dot-green"
+                        : "bg-muted text-foreground/80",
+                    )}
+                  >
+                    {tech}
+                  </span>
+                );
+              })}
             </div>
           </Section>
         )}
@@ -1154,6 +1346,34 @@ function JobDetail({
 }
 
 /* -------------------- Pieces -------------------- */
+
+function ToolbarToggle({
+  icon: Icon,
+  active,
+  onClick,
+  label,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors",
+        active
+          ? "border-dot-orange/30 bg-dot-orange/10 text-dot-orange"
+          : "border-input bg-background text-foreground hover:bg-accent",
+      )}
+    >
+      <Icon className="h-4 w-4" /> {label}
+    </button>
+  );
+}
 
 function FilterSelect({
   value,
@@ -1215,27 +1435,6 @@ function CompanyLogo({
         "shrink-0 rounded-sm border border-border/50 bg-white object-contain",
       )}
     />
-  );
-}
-
-function FitBadge({ score }: { score: number }) {
-  const tier = fitTier(score);
-  const cls: Record<FitTier, string> = {
-    high: "bg-dot-green/10 text-dot-green",
-    mid: "bg-dot-orange/10 text-dot-orange",
-    low: "bg-muted text-muted-foreground",
-  };
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-        cls[tier],
-      )}
-      title={`Độ phù hợp ${score}%`}
-    >
-      <Sparkles className="h-3 w-3" />
-      {score}%
-    </span>
   );
 }
 
@@ -1409,7 +1608,12 @@ function withinDays(job: Job, days: number, now: number): boolean {
   return now - t <= days * 24 * 60 * 60 * 1000;
 }
 
-function computeStats(jobs: Job[], now: number): Stats {
+function computeStats(
+  jobs: Job[],
+  now: number,
+  scored: Map<string, JobMatchResult>,
+  matchEnabled: boolean,
+): Stats {
   const withSalary = jobs.filter((j) => salaryBucketOf(j) !== "thoa-thuan");
   const reps = withSalary
     .map(repSalary)
@@ -1419,43 +1623,36 @@ function computeStats(jobs: Job[], now: number): Stats {
     ? reps[Math.floor((reps.length - 1) / 2)]
     : 0;
 
-  const fitJobs = jobs.filter(
-    (j) => typeof j.fitScore === "number" && j.fitScore > 0,
-  );
-  const avgFit = fitJobs.length
-    ? Math.round(
-        fitJobs.reduce((sum, j) => sum + (j.fitScore ?? 0), 0) / fitJobs.length,
-      )
-    : 0;
+  let matchAvg = 0;
+  let matchTop = 0;
+  if (matchEnabled && jobs.length > 0) {
+    const scores = jobs.map((j) => scored.get(j.id)?.score ?? 0);
+    matchAvg = Math.round(scores.reduce((s, n) => s + n, 0) / scores.length);
+    matchTop = scores.filter((s) => s >= 80).length;
+  }
 
   return {
     total: jobs.length,
     new7: jobs.filter((j) => withinDays(j, 7, now)).length,
     withSalaryCount: withSalary.length,
     medianSalary,
-    avgFit,
-    highFit: jobs.filter((j) => (j.fitScore ?? 0) >= 70).length,
+    matchEnabled,
+    matchAvg,
+    matchTop,
     byLevel: countBy(jobs, (j) => j.level).slice(0, 6),
     bySource: countBy(jobs, (j) => j.source).slice(0, 6),
     topCompanies: countBy(jobs, (j) => j.company || null).slice(0, 6),
   };
 }
 
-function fitTier(score: number): FitTier {
-  if (score >= 70) return "high";
-  if (score >= 40) return "mid";
-  return "low";
-}
-
 function sortJobs(jobs: Job[], key: SortKey): Job[] {
   const sorted = [...jobs];
-  if (key === "fit") {
-    sorted.sort((a, b) => (b.fitScore ?? -1) - (a.fitScore ?? -1));
-  } else if (key === "posted") {
+  if (key === "posted") {
     sorted.sort((a, b) => dateValue(b.postedAt) - dateValue(a.postedAt));
   } else if (key === "salary") {
     sorted.sort((a, b) => repSalary(b) - repSalary(a));
   } else {
+    // "crawl" và fallback khi "match" nhưng barem tắt.
     sorted.sort((a, b) => dateValue(b.crawlAt) - dateValue(a.crawlAt));
   }
   return sorted;

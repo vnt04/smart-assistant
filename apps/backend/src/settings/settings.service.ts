@@ -6,10 +6,12 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import * as bcrypt from "bcrypt";
 import { Repository } from "typeorm";
-import type {
-  SetNotesLockInput,
-  UpdateSettingsInput,
-  UserSettings,
+import {
+  normalizeJobMatchProfile,
+  type JobMatchProfile,
+  type SetNotesLockInput,
+  type UpdateSettingsInput,
+  type UserSettings,
 } from "@assistant/shared";
 import { CryptoService } from "../common/crypto/crypto.service";
 import { UserSettingsEntity } from "./user-settings.entity";
@@ -76,6 +78,28 @@ export class SettingsService {
 
     const saved = await this.repo.save(entity);
     return this.toDto(saved);
+  }
+
+  /* -------------------- Matching Job (barem chấm điểm) -------------------- */
+
+  /** Barem của user; chưa cấu hình hoặc chưa có settings → barem mặc định. */
+  async getJobMatchProfile(userId: string): Promise<JobMatchProfile> {
+    const entity = await this.repo.findOne({ where: { userId } });
+    return normalizeJobMatchProfile(entity?.jobMatchPrefs ?? null);
+  }
+
+  /** Lưu trọn barem (PUT). Chuẩn hóa trước khi ghi để dữ liệu luôn hợp lệ. */
+  async updateJobMatchProfile(
+    userId: string,
+    input: JobMatchProfile,
+  ): Promise<JobMatchProfile> {
+    const entity =
+      (await this.repo.findOne({ where: { userId } })) ??
+      (await this.initForUser(userId));
+    const profile = normalizeJobMatchProfile(input);
+    entity.jobMatchPrefs = profile;
+    await this.repo.save(entity);
+    return profile;
   }
 
   /* -------------------- Notes lock password -------------------- */

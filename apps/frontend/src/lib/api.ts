@@ -26,6 +26,7 @@ import {
   trendResponseSchema,
   userProfileSchema,
   userSettingsSchema,
+  jobMatchProfileSchema,
   trackVocabResponseSchema,
   vocabListResponseSchema,
   jobListResponseSchema,
@@ -94,6 +95,7 @@ import {
   type UpdateWalletInput,
   type UserProfile,
   type UserSettings,
+  type JobMatchProfile,
   type VocabItem,
   type Job,
   type TechFacet,
@@ -265,6 +267,17 @@ export const api = {
         method: "DELETE",
         body: { password },
       }),
+    ),
+
+  // Matching Job — barem chấm điểm cá nhân hóa
+  getJobMatchProfile: async (): Promise<JobMatchProfile> =>
+    jobMatchProfileSchema.parse(await request("/auth/settings/job-match")),
+
+  updateJobMatchProfile: async (
+    input: JobMatchProfile,
+  ): Promise<JobMatchProfile> =>
+    jobMatchProfileSchema.parse(
+      await request("/auth/settings/job-match", { method: "PUT", body: input }),
     ),
 
   // Notebooks

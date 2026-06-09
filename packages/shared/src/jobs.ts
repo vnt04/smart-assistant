@@ -124,6 +124,12 @@ export const jobSchema = z.object({
   applicants: z.string().nullable(),
 
   techStack: z.array(z.string()),
+  /**
+   * Slug công nghệ đã chuẩn hóa, **căn theo chỉ số** với `techStack`
+   * (`techSlugs[i]` là slug của `techStack[i]`). Dùng để khớp barem theo slug
+   * và tô sáng đúng tag công nghệ khớp trên thẻ job.
+   */
+  techSlugs: z.array(z.string()),
   requirements: z.array(z.string()),
   responsibilities: z.array(z.string()),
   benefits: z.array(z.string()),

@@ -17,3 +17,4 @@ export * from "./reports.js";
 export * from "./ai.js";
 export * from "./vocab.js";
 export * from "./jobs.js";
+export * from "./job-match.js";

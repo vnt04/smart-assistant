@@ -7,15 +7,18 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from "@nestjs/common";
 import {
   type AuthTokens,
+  type JobMatchProfile,
   type LogoutInput,
   type RefreshInput,
   type RegisterInput,
   type LoginInput,
   type SetNotesLockInput,
+  type UpdateJobMatchProfileInput,
   type UpdateSettingsInput,
   type UserProfile,
   type UserSettings,
@@ -25,6 +28,7 @@ import {
   refreshInputSchema,
   registerInputSchema,
   setNotesLockInputSchema,
+  updateJobMatchProfileInputSchema,
   updateSettingsInputSchema,
   verifyNotesLockInputSchema,
 } from "@assistant/shared";
@@ -94,6 +98,23 @@ export class AuthController {
     input: UpdateSettingsInput,
   ): Promise<UserSettings> {
     return this.settings.update(user.id, input);
+  }
+
+  // Barem chấm điểm "Matching Job" — cấu hình cá nhân hóa danh sách job.
+  @Get("settings/job-match")
+  @UseGuards(JwtAuthGuard)
+  getJobMatchProfile(@CurrentUser() user: UserEntity): Promise<JobMatchProfile> {
+    return this.settings.getJobMatchProfile(user.id);
+  }
+
+  @Put("settings/job-match")
+  @UseGuards(JwtAuthGuard)
+  updateJobMatchProfile(
+    @CurrentUser() user: UserEntity,
+    @Body(new ZodValidationPipe(updateJobMatchProfileInputSchema))
+    input: UpdateJobMatchProfileInput,
+  ): Promise<JobMatchProfile> {
+    return this.settings.updateJobMatchProfile(user.id, input);
   }
 
   // Đặt mới hoặc đổi mật khẩu khóa ghi chú.

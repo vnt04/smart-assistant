@@ -6,7 +6,7 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from "typeorm";
-import type { AiProvider, Theme } from "@assistant/shared";
+import type { AiProvider, JobMatchProfile, Theme } from "@assistant/shared";
 import { UserEntity } from "../users/entities/user.entity";
 
 @Entity({ name: "user_settings" })
@@ -69,6 +69,11 @@ export class UserSettingsEntity {
     nullable: true,
   })
   notesLockHash!: string | null;
+
+  // Barem chấm điểm "Matching Job" của user (NULL = dùng mặc định). Không nhạy
+  // cảm nên lưu JSON thường, không mã hóa.
+  @Column({ name: "job_match_prefs", type: "json", nullable: true })
+  jobMatchPrefs!: JobMatchProfile | null;
 
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;

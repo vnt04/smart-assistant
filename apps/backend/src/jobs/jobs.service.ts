@@ -87,7 +87,15 @@ export class JobsService {
         techEntities.map((t) => t.id),
       );
 
-      return { status, job: toDto(job, orderedTechNames(techs, techEntities)) };
+      const pairs = orderedTechPairs(techs, techEntities);
+      return {
+        status,
+        job: toDto(
+          job,
+          pairs.map((p) => p.name),
+          pairs.map((p) => p.slug),
+        ),
+      };
     });
   }
 
@@ -98,7 +106,7 @@ export class JobsService {
         relations: { technologies: true },
         order: { crawlAt: "DESC" },
       });
-      return rows.map((j) => toDto(j, techNames(j)));
+      return rows.map((j) => toDtoFromEntity(j));
     }
 
     // Lọc bằng subquery trên bảng nối (dùng index), nhưng vẫn nạp toàn bộ
@@ -120,7 +128,7 @@ export class JobsService {
       .orderBy("j.crawlAt", "DESC");
 
     const rows = await qb.getMany();
-    return rows.map((j) => toDto(j, techNames(j)));
+    return rows.map((j) => toDtoFromEntity(j));
   }
 
   /** Facet công nghệ: mỗi công nghệ kèm số job; nhiều job nhất trước. */
@@ -199,22 +207,41 @@ async function syncJobTechnologies(
   );
 }
 
-/** Tên hiển thị theo đúng thứ tự đã chuẩn hóa của input. */
-function orderedTechNames(
-  techs: NormalizedTech[],
-  entities: TechnologyEntity[],
-): string[] {
-  const bySlug = new Map(entities.map((t) => [t.slug, t.name]));
-  return techs
-    .map((t) => bySlug.get(t.slug))
-    .filter((n): n is string => n != null);
+/** Cặp tên hiển thị + slug của một công nghệ. */
+interface TechPair {
+  name: string;
+  slug: string;
 }
 
-/** Tên công nghệ của một job đã nạp quan hệ (thứ tự theo tên). */
-function techNames(job: JobEntity): string[] {
+/** Cặp {name, slug} theo đúng thứ tự đã chuẩn hóa của input (cho response ingest). */
+function orderedTechPairs(
+  techs: NormalizedTech[],
+  entities: TechnologyEntity[],
+): TechPair[] {
+  const bySlug = new Map(entities.map((t) => [t.slug, t.name]));
+  return techs
+    .map((t) => {
+      const name = bySlug.get(t.slug);
+      return name ? { name, slug: t.slug } : null;
+    })
+    .filter((p): p is TechPair => p !== null);
+}
+
+/** Cặp {name, slug} của job đã nạp quan hệ, sắp theo tên (căn chỉ số DTO). */
+function techPairs(job: JobEntity): TechPair[] {
   return [...(job.technologies ?? [])]
-    .map((t) => t.name)
-    .sort((a, b) => a.localeCompare(b));
+    .map((t) => ({ name: t.name, slug: t.slug }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Dựng DTO từ entity đã nạp quan hệ `technologies`. */
+function toDtoFromEntity(job: JobEntity): Job {
+  const pairs = techPairs(job);
+  return toDto(
+    job,
+    pairs.map((p) => p.name),
+    pairs.map((p) => p.slug),
+  );
 }
 
 /** Quy đổi input đã validate thành các cột của entity. */
@@ -266,7 +293,7 @@ function isDuplicateEntry(e: unknown): boolean {
   );
 }
 
-function toDto(e: JobEntity, techStack: string[]): Job {
+function toDto(e: JobEntity, techStack: string[], techSlugs: string[]): Job {
   return {
     id: e.id,
     jobId: e.jobId,
@@ -285,6 +312,7 @@ function toDto(e: JobEntity, techStack: string[]): Job {
     deadline: e.deadline,
     applicants: e.applicants,
     techStack,
+    techSlugs,
     requirements: e.requirements ?? [],
     responsibilities: e.responsibilities ?? [],
     benefits: e.benefits ?? [],
