@@ -66,6 +66,7 @@ export const ingestJobInputSchema = z.object({
   source: nullableString(32).transform((v) => v ?? "unknown"),
   title: z.string().trim().min(1).max(MAX_JOB_TITLE_LENGTH),
   company: nullableString(255).transform((v) => v ?? ""),
+  companyLogo: nullableString(1024).transform((v) => v ?? ""),
   location: nullableString(255).transform((v) => v ?? ""),
 
   salaryMin: nullableMoney,
@@ -109,6 +110,7 @@ export const jobSchema = z.object({
   source: z.string(),
   title: z.string(),
   company: z.string(),
+  companyLogo: z.string(),
   location: z.string(),
 
   salaryMin: z.number().nullable(),
@@ -146,3 +148,18 @@ export type IngestJobResponse = z.infer<typeof ingestJobResponseSchema>;
 /** Response cho GET /jobs — danh sách job, mới crawl trước. */
 export const jobListResponseSchema = z.array(jobSchema);
 export type JobListResponse = z.infer<typeof jobListResponseSchema>;
+
+/**
+ * Một mục facet công nghệ: `slug` đã chuẩn hóa (khóa lọc), `name` để hiển thị,
+ * `count` là số job đang gắn công nghệ đó. Dùng dựng bộ lọc theo công nghệ.
+ */
+export const techFacetSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  count: z.number().int().nonnegative(),
+});
+export type TechFacet = z.infer<typeof techFacetSchema>;
+
+/** Response cho GET /jobs/tech-facets — facet nhiều job nhất trước. */
+export const techFacetListResponseSchema = z.array(techFacetSchema);
+export type TechFacetListResponse = z.infer<typeof techFacetListResponseSchema>;

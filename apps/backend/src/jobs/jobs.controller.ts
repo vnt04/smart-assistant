@@ -7,10 +7,11 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
-import type { IngestJobResponse, Job } from "@assistant/shared";
+import type { IngestJobResponse, Job, TechFacet } from "@assistant/shared";
 import { JobsService } from "./jobs.service";
 
 /**
@@ -24,8 +25,14 @@ export class JobsController {
   constructor(private readonly svc: JobsService) {}
 
   @Get()
-  list(): Promise<Job[]> {
-    return this.svc.list();
+  list(@Query("tech") tech?: string | string[]): Promise<Job[]> {
+    return this.svc.list(parseTechSlugs(tech));
+  }
+
+  /** Facet công nghệ kèm số lượng job — dựng bộ lọc ở frontend. */
+  @Get("tech-facets")
+  techFacets(): Promise<TechFacet[]> {
+    return this.svc.listTechFacets();
   }
 
   @Post()
@@ -43,4 +50,18 @@ export class JobsController {
   remove(@Param("id", ParseUUIDPipe) id: string): Promise<void> {
     return this.svc.remove(id);
   }
+}
+
+/**
+ * Chuẩn hóa query `tech` về `string[]`: nhận lặp (`?tech=a&tech=b`) hoặc phẩy
+ * (`?tech=a,b`); trim, bỏ rỗng, khử trùng lặp.
+ */
+function parseTechSlugs(tech?: string | string[]): string[] {
+  if (tech === undefined) return [];
+  const raw = Array.isArray(tech) ? tech : [tech];
+  const slugs = raw
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0);
+  return [...new Set(slugs)];
 }

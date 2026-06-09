@@ -3,9 +3,12 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinTable,
+  ManyToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
+import { TechnologyEntity } from "./technology.entity";
 
 /**
  * Job crawl từ nguồn ngoài (LinkedIn, …) đẩy vào qua n8n. Bảng global, không gắn
@@ -32,6 +35,9 @@ export class JobEntity {
 
   @Column({ type: "varchar", length: 255, default: "" })
   company!: string;
+
+  @Column({ name: "company_logo", type: "varchar", length: 1024, default: "" })
+  companyLogo!: string;
 
   @Column({ type: "varchar", length: 255, default: "" })
   location!: string;
@@ -61,8 +67,18 @@ export class JobEntity {
   @Column({ type: "varchar", length: 128, nullable: true })
   applicants!: string | null;
 
-  @Column({ name: "tech_stack", type: "json" })
-  techStack!: string[];
+  /**
+   * Công nghệ đã chuẩn hóa, lưu quan hệ N–N qua `job_technologies` (thay cho
+   * cột `tech_stack` JSON trước đây). Hiển thị lấy `technologies[].name`; lọc
+   * theo `technologies[].slug`.
+   */
+  @ManyToMany(() => TechnologyEntity)
+  @JoinTable({
+    name: "job_technologies",
+    joinColumn: { name: "job_id", referencedColumnName: "id" },
+    inverseJoinColumn: { name: "technology_id", referencedColumnName: "id" },
+  })
+  technologies?: TechnologyEntity[];
 
   @Column({ type: "json" })
   requirements!: string[];

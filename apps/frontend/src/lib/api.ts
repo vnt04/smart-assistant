@@ -29,6 +29,7 @@ import {
   trackVocabResponseSchema,
   vocabListResponseSchema,
   jobListResponseSchema,
+  techFacetListResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -95,6 +96,7 @@ import {
   type UserSettings,
   type VocabItem,
   type Job,
+  type TechFacet,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -731,8 +733,17 @@ export const api = {
     request(`/vocab/${id}`, { method: "DELETE", auth: false }),
 
   // Jobs (public endpoint — n8n ingest qua POST; view dùng GET/DELETE)
-  listJobs: async (): Promise<Job[]> =>
-    jobListResponseSchema.parse(await request("/jobs", { auth: false })),
+  listJobs: async (tech: string[] = []): Promise<Job[]> => {
+    const qs = tech.length > 0 ? `?tech=${encodeURIComponent(tech.join(","))}` : "";
+    return jobListResponseSchema.parse(
+      await request(`/jobs${qs}`, { auth: false }),
+    );
+  },
+
+  listTechFacets: async (): Promise<TechFacet[]> =>
+    techFacetListResponseSchema.parse(
+      await request("/jobs/tech-facets", { auth: false }),
+    ),
 
   deleteJob: async (id: string): Promise<void> =>
     request(`/jobs/${id}`, { method: "DELETE", auth: false }),

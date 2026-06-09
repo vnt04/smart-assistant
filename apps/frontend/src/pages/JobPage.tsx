@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Job } from "@assistant/shared";
+import type { Job, TechFacet } from "@assistant/shared";
 import {
   Briefcase,
   Building2,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { useConfirm } from "../components/ui/confirm-dialog";
@@ -38,18 +39,34 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 export function JobPage() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const jobsQuery = useQuery({ queryKey: ["jobs"], queryFn: api.listJobs });
 
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState("");
   const [source, setSource] = useState("");
   const [sort, setSort] = useState<SortKey>("crawl");
+  const [selectedTech, setSelectedTech] = useState<string[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
+
+  const jobsQuery = useQuery({
+    queryKey: ["jobs", selectedTech],
+    queryFn: () => api.listJobs(selectedTech),
+  });
+  const facetsQuery = useQuery({
+    queryKey: ["job-tech-facets"],
+    queryFn: api.listTechFacets,
+  });
+
+  function toggleTech(slug: string): void {
+    setSelectedTech((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug],
+    );
+  }
 
   const deleteMutation = useMutation({
     mutationFn: api.deleteJob,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["job-tech-facets"] });
       setSelected(null);
     },
   });
@@ -147,13 +164,26 @@ export function JobPage() {
           </div>
         </div>
 
+        <TechFacetChips
+          facets={facetsQuery.data ?? []}
+          selected={selectedTech}
+          onToggle={toggleTech}
+          onClear={() => setSelectedTech([])}
+        />
+
         <div className="mt-6">
           {jobsQuery.isLoading ? (
             <LoadingState />
           ) : jobsQuery.isError ? (
             <ErrorState onRetry={() => void jobsQuery.refetch()} />
           ) : jobs.length === 0 ? (
-            <EmptyState />
+            selectedTech.length > 0 ? (
+              <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                Không có công việc nào dùng công nghệ đã chọn.
+              </p>
+            ) : (
+              <EmptyState />
+            )
           ) : filtered.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
               Không có công việc nào khớp bộ lọc.
@@ -221,7 +251,7 @@ function JobCard({
         <div className="min-w-0">
           <h3 className="truncate font-semibold leading-snug">{job.title}</h3>
           <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
+            <CompanyLogo src={job.companyLogo} name={job.company} size="sm" />
             <span className="truncate">{job.company || "—"}</span>
           </div>
         </div>
@@ -302,8 +332,8 @@ function JobDetail({
           {job.title}
         </SheetTitle>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <Building2 className="h-4 w-4" />
+          <span className="inline-flex items-center gap-1.5">
+            <CompanyLogo src={job.companyLogo} name={job.company} size="lg" />
             {job.company || "—"}
           </span>
           {job.location && (
@@ -451,6 +481,89 @@ function FilterSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function CompanyLogo({
+  src,
+  name,
+  size = "sm",
+}: {
+  src: string;
+  name: string;
+  size?: "sm" | "lg";
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <Building2 className={cn(size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")} />
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={name ? `Logo ${name}` : "Logo công ty"}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={cn(
+        size === "lg" ? "h-6 w-6" : "h-5 w-5",
+        "shrink-0 rounded-sm border border-border/50 bg-white object-contain",
+      )}
+    />
+  );
+}
+
+function TechFacetChips({
+  facets,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  facets: TechFacet[];
+  selected: string[];
+  onToggle: (slug: string) => void;
+  onClear: () => void;
+}) {
+  if (facets.length === 0) return null;
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-1.5">
+      {facets.map((facet) => {
+        const active = selected.includes(facet.slug);
+        return (
+          <button
+            key={facet.slug}
+            type="button"
+            onClick={() => onToggle(facet.slug)}
+            aria-pressed={active}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+              active
+                ? "border-dot-orange/30 bg-dot-orange/10 text-dot-orange"
+                : "border-border bg-card text-muted-foreground hover:bg-accent",
+            )}
+          >
+            {facet.name}
+            <span
+              className={cn(
+                "tabular-nums",
+                active ? "text-dot-orange/70" : "text-muted-foreground/60",
+              )}
+            >
+              {facet.count}
+            </span>
+          </button>
+        );
+      })}
+      {selected.length > 0 && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <X className="h-3 w-3" /> Xóa lọc
+        </button>
+      )}
+    </div>
   );
 }
 
