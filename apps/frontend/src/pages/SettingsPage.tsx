@@ -24,11 +24,12 @@ export function SettingsPage() {
   });
 
   return (
-    <section className="mx-auto max-w-2xl space-y-6 p-6">
+    <div className="h-full overflow-y-auto scrollbar-thin">
+      <section className="mx-auto max-w-2xl space-y-6 p-6">
       <header>
         <h1 className="text-2xl font-bold">Cài đặt</h1>
         <p className="text-sm text-muted-foreground">
-          Cấu hình AI provider, Telegram, theme.
+          Cấu hình AI provider, Telegram, n8n, theme.
         </p>
       </header>
       {isLoading && <p className="text-muted-foreground">Đang tải…</p>}
@@ -48,7 +49,8 @@ export function SettingsPage() {
           />
         </>
       )}
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -217,12 +219,15 @@ function SettingsForm({ initial, onSaved }: SettingsFormProps) {
   const [telegramChatId, setTelegramChatId] = useState(
     initial.telegramChatId ?? "",
   );
+  const [n8nBaseUrl, setN8nBaseUrl] = useState(initial.n8nBaseUrl ?? "");
+  const [n8nApiKey, setN8nApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setAiProvider(initial.aiProvider);
     setTheme(initial.theme);
     setTelegramChatId(initial.telegramChatId ?? "");
+    setN8nBaseUrl(initial.n8nBaseUrl ?? "");
   }, [initial]);
 
   const mutation = useMutation({
@@ -230,6 +235,7 @@ function SettingsForm({ initial, onSaved }: SettingsFormProps) {
     onSuccess: (s) => {
       setAiApiKey("");
       setTelegramBotToken("");
+      setN8nApiKey("");
       onSaved(s);
     },
   });
@@ -242,6 +248,9 @@ function SettingsForm({ initial, onSaved }: SettingsFormProps) {
     if (telegramBotToken.length > 0) patch.telegramBotToken = telegramBotToken;
     if ((initial.telegramChatId ?? "") !== telegramChatId)
       patch.telegramChatId = telegramChatId || null;
+    if ((initial.n8nBaseUrl ?? "") !== n8nBaseUrl.trim())
+      patch.n8nBaseUrl = n8nBaseUrl.trim() || null;
+    if (n8nApiKey.trim().length > 0) patch.n8nApiKey = n8nApiKey.trim();
     const parsed = updateSettingsInputSchema.safeParse(patch);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Dữ liệu không hợp lệ");
@@ -315,6 +324,45 @@ function SettingsForm({ initial, onSaved }: SettingsFormProps) {
           value={telegramChatId}
           onChange={(e) => setTelegramChatId(e.target.value)}
         />
+      </div>
+
+      <div className="space-y-4 rounded-lg border border-border p-4">
+        <div>
+          <h2 className="text-base font-semibold">n8n — Quản lý Workflow Exc</h2>
+          <p className="text-sm text-muted-foreground">
+            Dùng để xem, retry &amp; xóa executions từ view Jobs. Tạo API key
+            trong n8n: Settings → n8n API (scope execution + workflow).
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="n8nBaseUrl">Base URL</Label>
+          <Input
+            id="n8nBaseUrl"
+            type="url"
+            placeholder="https://n8n.nghiepdev.info"
+            value={n8nBaseUrl}
+            onChange={(e) => setN8nBaseUrl(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="n8nApiKey">
+            API key{" "}
+            {initial.n8nApiKeyMasked && (
+              <span className="text-xs text-muted-foreground">
+                (hiện tại: {initial.n8nApiKeyMasked})
+              </span>
+            )}
+          </Label>
+          <Input
+            id="n8nApiKey"
+            type="password"
+            placeholder="Dán n8n API key (header X-N8N-API-KEY)"
+            value={n8nApiKey}
+            onChange={(e) => setN8nApiKey(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="space-y-1.5">

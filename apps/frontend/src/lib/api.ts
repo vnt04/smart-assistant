@@ -31,6 +31,9 @@ import {
   vocabListResponseSchema,
   jobListResponseSchema,
   techFacetListResponseSchema,
+  n8nExecutionListResponseSchema,
+  n8nExecutionDetailSchema,
+  n8nRetryResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -99,6 +102,9 @@ import {
   type VocabItem,
   type Job,
   type TechFacet,
+  type N8nExecutionListResponse,
+  type N8nExecutionDetail,
+  type N8nRetryResponse,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -760,6 +766,36 @@ export const api = {
 
   deleteJob: async (id: string): Promise<void> =>
     request(`/jobs/${id}`, { method: "DELETE", auth: false }),
+
+  // n8n — Quản lý Workflow Exc (proxy qua backend, dùng cookie n8n trong settings)
+  listN8nExecutions: async (limit = 20): Promise<N8nExecutionListResponse> =>
+    n8nExecutionListResponseSchema.parse(
+      await request(`/n8n/executions?limit=${limit}`),
+    ),
+
+  getN8nExecution: async (id: string): Promise<N8nExecutionDetail> =>
+    n8nExecutionDetailSchema.parse(
+      await request(`/n8n/executions/${encodeURIComponent(id)}`),
+    ),
+
+  stopN8nExecution: async (id: string): Promise<void> =>
+    request(`/n8n/executions/${encodeURIComponent(id)}/stop`, {
+      method: "POST",
+    }),
+
+  retryN8nExecution: async (
+    id: string,
+    loadWorkflow: boolean,
+  ): Promise<N8nRetryResponse> =>
+    n8nRetryResponseSchema.parse(
+      await request(`/n8n/executions/${encodeURIComponent(id)}/retry`, {
+        method: "POST",
+        body: { loadWorkflow },
+      }),
+    ),
+
+  deleteN8nExecution: async (id: string): Promise<void> =>
+    request(`/n8n/executions/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 function toQuery(query: Record<string, unknown>): string {

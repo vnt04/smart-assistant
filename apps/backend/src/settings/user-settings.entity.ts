@@ -75,6 +75,19 @@ export class UserSettingsEntity {
   @Column({ name: "job_match_prefs", type: "json", nullable: true })
   jobMatchPrefs!: JobMatchProfile | null;
 
+  // Cấu hình n8n cho "Quản lý Workflow Exc". Base URL không nhạy cảm; API key
+  // công khai (X-N8N-API-KEY) được mã hóa AES-256-GCM, không trả plaintext ra DTO.
+  @Column({ name: "n8n_base_url", type: "varchar", length: 512, nullable: true })
+  n8nBaseUrl!: string | null;
+
+  @Column({
+    name: "n8n_api_key_enc",
+    type: "varchar",
+    length: 2048,
+    nullable: true,
+  })
+  n8nApiKeyEnc!: string | null;
+
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }

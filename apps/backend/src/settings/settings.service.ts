@@ -18,6 +18,12 @@ import { UserSettingsEntity } from "./user-settings.entity";
 
 const BCRYPT_COST = 12;
 
+/** Cấu hình n8n đã giải mã, đủ để gọi public API (/api/v1) của n8n. */
+export interface N8nConfig {
+  baseUrl: string;
+  apiKey: string;
+}
+
 @Injectable()
 export class SettingsService {
   constructor(
@@ -35,6 +41,8 @@ export class SettingsService {
       telegramChatId: null,
       theme: "system",
       defaultWalletId: null,
+      n8nBaseUrl: null,
+      n8nApiKeyEnc: null,
     });
     return this.repo.save(entity);
   }
@@ -76,8 +84,27 @@ export class SettingsService {
           : this.crypto.encrypt(input.telegramBotToken);
     }
 
+    if (input.n8nBaseUrl !== undefined) {
+      entity.n8nBaseUrl =
+        input.n8nBaseUrl === null ? null : normalizeBaseUrl(input.n8nBaseUrl);
+    }
+    if (input.n8nApiKey !== undefined) {
+      const key = input.n8nApiKey?.trim() ?? "";
+      entity.n8nApiKeyEnc = key === "" ? null : this.crypto.encrypt(key);
+    }
+
     const saved = await this.repo.save(entity);
     return this.toDto(saved);
+  }
+
+  /** Cấu hình n8n đã giải mã; thiếu base URL hoặc API key → null (chưa cấu hình). */
+  async getN8nConfig(userId: string): Promise<N8nConfig | null> {
+    const entity = await this.repo.findOne({ where: { userId } });
+    if (!entity?.n8nBaseUrl || !entity.n8nApiKeyEnc) return null;
+    return {
+      baseUrl: entity.n8nBaseUrl,
+      apiKey: this.crypto.decrypt(entity.n8nApiKeyEnc),
+    };
   }
 
   /* -------------------- Matching Job (barem chấm điểm) -------------------- */
@@ -218,6 +245,15 @@ export class SettingsService {
       theme: entity.theme,
       defaultWalletId: entity.defaultWalletId,
       hasNotesLock: entity.notesLockHash != null,
+      n8nBaseUrl: entity.n8nBaseUrl,
+      n8nApiKeyMasked: entity.n8nApiKeyEnc
+        ? this.crypto.mask(this.crypto.decrypt(entity.n8nApiKeyEnc))
+        : null,
     };
   }
+}
+
+/** Bỏ dấu "/" cuối của base URL để ghép path API không bị "//". */
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
 }

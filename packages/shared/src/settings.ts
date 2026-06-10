@@ -15,6 +15,10 @@ export const userSettingsSchema = z.object({
   defaultWalletId: z.string().uuid().nullable(),
   // Đã đặt mật khẩu khóa ghi chú hay chưa. KHÔNG bao giờ lộ hash mật khẩu.
   hasNotesLock: z.boolean(),
+  // Cấu hình n8n cho "Quản lý Workflow Exc" ở view Jobs. Base URL không nhạy cảm
+  // nên trả thẳng; API key (X-N8N-API-KEY) chỉ trả dạng masked.
+  n8nBaseUrl: z.string().nullable(),
+  n8nApiKeyMasked: z.string().nullable(),
 });
 export type UserSettings = z.infer<typeof userSettingsSchema>;
 
@@ -30,6 +34,9 @@ export const updateSettingsInputSchema = z
     telegramChatId: z.string().min(1).max(64).nullable().optional(),
     theme: themeSchema.optional(),
     defaultWalletId: z.string().uuid().nullable().optional(),
+    // n8n: base URL (http/https) + API key công khai (header X-N8N-API-KEY).
+    n8nBaseUrl: z.string().url("Base URL n8n không hợp lệ").max(512).nullable().optional(),
+    n8nApiKey: z.string().min(1).max(2048).nullable().optional(),
   })
   .strict();
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;

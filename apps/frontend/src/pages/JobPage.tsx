@@ -34,6 +34,7 @@ import {
   Trash2,
   Users,
   Wallet,
+  Workflow,
   X,
 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -42,6 +43,7 @@ import { Input } from "../components/ui/input";
 import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 import { MatchBadge } from "../components/jobs/MatchBadge";
 import { MatchProfileEditor } from "../components/jobs/MatchProfileEditor";
+import { WorkflowExecutionsDrawer } from "../components/jobs/WorkflowExecutionsDrawer";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 
@@ -107,6 +109,7 @@ export function JobPage() {
   const [showStats, setShowStats] = useState(false);
   const [selected, setSelected] = useState<Job | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
 
   const jobsQuery = useQuery({
     queryKey: ["jobs", selectedTech],
@@ -390,6 +393,12 @@ export function JobPage() {
               onClick={() => setShowStats((s) => !s)}
               label="Thống kê"
             />
+            <ToolbarToggle
+              icon={Workflow}
+              active={workflowOpen}
+              onClick={() => setWorkflowOpen(true)}
+              label="Workflow Exc"
+            />
           </div>
         </div>
 
@@ -494,6 +503,11 @@ export function JobPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      <WorkflowExecutionsDrawer
+        open={workflowOpen}
+        onOpenChange={setWorkflowOpen}
+      />
 
       <MatchProfileEditor
         open={editorOpen}
