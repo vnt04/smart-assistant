@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   DEFAULT_JOB_MATCH_PROFILE,
   scoreJob,
@@ -18,7 +19,6 @@ import {
 import {
   BarChart3,
   Briefcase,
-  Building2,
   Calendar,
   CalendarClock,
   ChevronDown,
@@ -44,6 +44,7 @@ import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 import { MatchBadge } from "../components/jobs/MatchBadge";
 import { MatchProfileEditor } from "../components/jobs/MatchProfileEditor";
 import { WorkflowExecutionsDrawer } from "../components/jobs/WorkflowExecutionsDrawer";
+import { CompanyLogo } from "../components/jobs/CompanyLogo";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 
@@ -106,7 +107,6 @@ export function JobPage() {
   const [salary, setSalary] = useState("");
   const [posted, setPosted] = useState("");
   const [selectedTech, setSelectedTech] = useState<string[]>([]);
-  const [showStats, setShowStats] = useState(false);
   const [selected, setSelected] = useState<Job | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
@@ -398,12 +398,12 @@ export function JobPage() {
               onClick={() => setEditorOpen(true)}
               label={matchEnabled ? "Barem · bật" : "Barem"}
             />
-            <ToolbarToggle
-              icon={BarChart3}
-              active={showStats}
-              onClick={() => setShowStats((s) => !s)}
-              label="Thống kê"
-            />
+            <Link
+              to="/job/stats"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <BarChart3 className="h-4 w-4" /> Thống kê
+            </Link>
             <ToolbarToggle
               icon={Workflow}
               active={workflowOpen}
@@ -447,10 +447,7 @@ export function JobPage() {
 
           <main className="min-w-0">
             {hasJobs && (
-              <>
-                <StatsBar stats={stats} filtered={hasFilter || search.length > 0} />
-                {showStats && <StatsPanel stats={stats} />}
-              </>
+              <StatsBar stats={stats} filtered={hasFilter || search.length > 0} />
             )}
 
             {activeChips.length > 0 && (
@@ -1059,61 +1056,6 @@ function MetricCard({
   );
 }
 
-function StatsPanel({ stats }: { stats: Stats }) {
-  return (
-    <div className="mt-3 grid gap-5 rounded-2xl border border-border bg-card p-4 shadow-soft sm:grid-cols-2 lg:grid-cols-3">
-      <DistList title="Theo cấp bậc" items={stats.byLevel} />
-      <DistList title="Theo nguồn" items={stats.bySource} renderLabel={sourceLabel} />
-      <DistList title="Top công ty" items={stats.topCompanies} />
-    </div>
-  );
-}
-
-function DistList({
-  title,
-  items,
-  renderLabel,
-}: {
-  title: string;
-  items: CountOption[];
-  renderLabel?: (value: string) => string;
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="min-w-0">
-        <SectionLabel>{title}</SectionLabel>
-        <p className="mt-2 text-xs text-muted-foreground">Chưa có dữ liệu.</p>
-      </div>
-    );
-  }
-  const max = Math.max(...items.map((i) => i.count), 1);
-  return (
-    <div className="min-w-0">
-      <SectionLabel>{title}</SectionLabel>
-      <ul className="mt-2.5 space-y-2">
-        {items.map((it) => (
-          <li key={it.value} className="min-w-0">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="truncate text-foreground/80">
-                {renderLabel ? renderLabel(it.value) : it.value}
-              </span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {it.count}
-              </span>
-            </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-dot-orange/60"
-                style={{ width: `${(it.count / max) * 100}%` }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /* -------------------- Card -------------------- */
 
 function JobCard({
@@ -1441,37 +1383,6 @@ function FilterSelect({
         </option>
       ))}
     </select>
-  );
-}
-
-function CompanyLogo({
-  src,
-  name,
-  size = "sm",
-}: {
-  src: string;
-  name: string;
-  size?: "sm" | "lg";
-}) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) {
-    return (
-      <Building2
-        className={cn(size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5", "shrink-0")}
-      />
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt={name ? `Logo ${name}` : "Logo công ty"}
-      loading="lazy"
-      onError={() => setFailed(true)}
-      className={cn(
-        size === "lg" ? "h-6 w-6" : "h-5 w-5",
-        "shrink-0 rounded-sm border border-border/50 bg-white object-contain",
-      )}
-    />
   );
 }
 

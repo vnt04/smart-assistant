@@ -13,6 +13,7 @@ import { useAuth } from "./features/auth/AuthContext";
 import { AssistantPage } from "./pages/AssistantPage";
 import { ExpensePage } from "./pages/ExpensePage";
 import { JobPage } from "./pages/JobPage";
+import { JobStatsPage } from "./pages/JobStatsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotesPage } from "./pages/NotesPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -130,6 +131,12 @@ const jobRoute = new Route({
   component: JobPage,
 });
 
+const jobStatsRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: "/job/stats",
+  component: JobStatsPage,
+});
+
 const scheduleRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/schedule",
@@ -173,6 +180,7 @@ const routeTree = rootRoute.addChildren([
   notesRoute,
   vocabRoute,
   jobRoute,
+  jobStatsRoute,
   scheduleRoute,
   expenseRoute,
   assistantRoute,

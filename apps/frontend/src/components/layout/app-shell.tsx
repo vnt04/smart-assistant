@@ -144,6 +144,8 @@ function TopHeader({
   onOpenMobileMenu: () => void;
 }) {
   const { resolved, toggle } = useTheme();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const onSettings = path.startsWith("/settings");
 
   return (
     <header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2.5 sm:px-4">
@@ -196,6 +198,20 @@ function TopHeader({
             <Moon className="h-4 w-4" />
           )}
         </button>
+        <Link
+          to="/settings"
+          className={cn(
+            "inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+            onSettings
+              ? "bg-accent text-accent-foreground"
+              : "text-foreground hover:bg-muted",
+          )}
+          title="Cài đặt"
+          aria-label="Cài đặt"
+          aria-current={onSettings ? "page" : undefined}
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
         <ProfileMenu variant="header" />
       </div>
     </header>
