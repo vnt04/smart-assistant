@@ -48,6 +48,35 @@ export type N8nExecutionListResponse = z.infer<
   typeof n8nExecutionListResponseSchema
 >;
 
+/** Số lần chạy theo từng trạng thái (đủ mọi key, đếm trên toàn bộ executions). */
+export const n8nExecutionStatusCountsSchema = z.object({
+  new: z.number().int().nonnegative(),
+  running: z.number().int().nonnegative(),
+  waiting: z.number().int().nonnegative(),
+  success: z.number().int().nonnegative(),
+  error: z.number().int().nonnegative(),
+  canceled: z.number().int().nonnegative(),
+  crashed: z.number().int().nonnegative(),
+  unknown: z.number().int().nonnegative(),
+});
+export type N8nExecutionStatusCounts = z.infer<
+  typeof n8nExecutionStatusCountsSchema
+>;
+
+/**
+ * Thống kê execution trên TOÀN BỘ (không phải trang đang xem): tổng số, số theo
+ * từng trạng thái, và `failed` (= error + crashed) để hiển thị badge ở nút. Số
+ * liệu lấy bằng cách quét phân trang qua n8n; `truncated` = true khi vượt trần
+ * quét nên các con số là tối thiểu.
+ */
+export const n8nExecutionStatsSchema = z.object({
+  total: z.number().int().nonnegative(),
+  byStatus: n8nExecutionStatusCountsSchema,
+  failed: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+export type N8nExecutionStats = z.infer<typeof n8nExecutionStatsSchema>;
+
 /** Tag chú thích (annotation tag) gắn trên execution. */
 export const n8nExecutionTagSchema = z.object({
   id: z.string(),

@@ -123,6 +123,17 @@ export function JobPage() {
     queryKey: ["job-match-profile"],
     queryFn: api.getJobMatchProfile,
   });
+  // Số workflow lỗi (error + crashed) trên TOÀN BỘ — badge ở nút Workflow Exc để
+  // không phải mở drawer mới biết có lỗi. Cùng queryKey với drawer nên chia sẻ cache.
+  // n8n chưa cấu hình → query lỗi (retry:false) → không hiện badge.
+  const n8nStatsQuery = useQuery({
+    queryKey: ["n8n-execution-stats"],
+    queryFn: () => api.getN8nExecutionStats(),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const failedWorkflows = n8nStatsQuery.data?.failed ?? 0;
 
   // Barem chỉnh sửa cục bộ (live preview); seed một lần từ server khi tải xong.
   const [profileDraft, setProfileDraft] = useState<JobMatchProfile | null>(null);
@@ -398,6 +409,7 @@ export function JobPage() {
               active={workflowOpen}
               onClick={() => setWorkflowOpen(true)}
               label="Workflow Exc"
+              badge={failedWorkflows}
             />
           </div>
         </div>
@@ -1366,11 +1378,14 @@ function ToolbarToggle({
   active,
   onClick,
   label,
+  badge,
 }: {
   icon: ComponentType<{ className?: string }>;
   active: boolean;
   onClick: () => void;
   label: string;
+  /** Số đếm cảnh báo (vd workflow lỗi); chỉ hiện chip đỏ khi > 0. */
+  badge?: number;
 }) {
   return (
     <button
@@ -1385,6 +1400,14 @@ function ToolbarToggle({
       )}
     >
       <Icon className="h-4 w-4" /> {label}
+      {badge != null && badge > 0 && (
+        <span
+          className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-2xs font-semibold tabular-nums text-destructive-foreground"
+          aria-label={`${badge} workflow lỗi`}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </button>
   );
 }

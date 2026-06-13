@@ -36,6 +36,8 @@ import { cn } from "../../lib/cn";
 
 const LIMIT_OPTIONS = [20, 50, 100];
 const AUTO_REFRESH_MS = 5_000;
+/** Thống kê tổng đổi chậm hơn danh sách + backend đã cache → làm mới thưa hơn. */
+const STATS_REFRESH_MS = 15_000;
 /** Trạng thái còn có thể dừng được. */
 const STOPPABLE: ReadonlySet<N8nExecutionStatus> = new Set([
   "running",
@@ -83,9 +85,18 @@ function ExecutionsPanel() {
     refetchInterval: autoRefresh && !selectedId ? AUTO_REFRESH_MS : false,
   });
 
+  // Thống kê trên TOÀN BỘ executions (độc lập với `limit` của danh sách).
+  const statsQuery = useQuery({
+    queryKey: ["n8n-execution-stats"],
+    queryFn: () => api.getN8nExecutionStats(),
+    refetchInterval: autoRefresh && !selectedId ? STATS_REFRESH_MS : false,
+    retry: false,
+  });
+
   const invalidate = (): void => {
     void queryClient.invalidateQueries({ queryKey: ["n8n-executions"] });
     void queryClient.invalidateQueries({ queryKey: ["n8n-execution"] });
+    void queryClient.invalidateQueries({ queryKey: ["n8n-execution-stats"] });
   };
 
   const retryMut = useMutation({
@@ -182,8 +193,19 @@ function ExecutionsPanel() {
   }
 
   const all = query.data?.results ?? [];
-  const statusCounts = new Map<N8nExecutionStatus, number>();
-  for (const e of all) statusCounts.set(e.status, (statusCounts.get(e.status) ?? 0) + 1);
+  const stats = statsQuery.data ?? null;
+
+  // Đếm trên trang đang tải — chỉ dùng làm fallback khi chưa có thống kê tổng.
+  const loadedCounts = new Map<N8nExecutionStatus, number>();
+  for (const e of all)
+    loadedCounts.set(e.status, (loadedCounts.get(e.status) ?? 0) + 1);
+
+  const totalCount = stats?.total ?? all.length;
+  const truncated = stats?.truncated ?? false;
+  const countFor = (s: N8nExecutionStatus): number =>
+    stats ? stats.byStatus[s] : loadedCounts.get(s) ?? 0;
+  const visibleStatuses = STATUS_ORDER.filter((s) => countFor(s) > 0);
+
   const filtered =
     statusFilter === "all"
       ? all
@@ -241,20 +263,22 @@ function ExecutionsPanel() {
           </select>
         </div>
 
-        {all.length > 0 && (
+        {totalCount > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             <StatusPill
               active={statusFilter === "all"}
               label="Tất cả"
-              count={all.length}
+              count={totalCount}
+              truncated={truncated}
               onClick={() => setStatusFilter("all")}
             />
-            {[...statusCounts.entries()].map(([status, count]) => (
+            {visibleStatuses.map((status) => (
               <StatusPill
                 key={status}
                 active={statusFilter === status}
                 label={STATUS_META[status].label}
-                count={count}
+                count={countFor(status)}
+                truncated={truncated}
                 tone={STATUS_META[status].tone}
                 onClick={() => setStatusFilter(status)}
               />
@@ -277,20 +301,34 @@ function ExecutionsPanel() {
               : "Không có execution nào khớp bộ lọc."}
           </p>
         ) : (
-          <ul className="space-y-2">
-            {filtered.map((exec) => (
-              <ExecutionRow
-                key={exec.id}
-                exec={exec}
-                busy={actingId === exec.id}
-                disabled={busy}
-                onOpen={() => setSelectedId(exec.id)}
-                onRetry={onRetry}
-                onStop={onStop}
-                onDelete={() => void onDelete(exec)}
-              />
-            ))}
-          </ul>
+          <>
+            <ListMeta
+              shown={filtered.length}
+              total={
+                statusFilter === "all" ? totalCount : countFor(statusFilter)
+              }
+              truncated={truncated}
+              statusLabel={
+                statusFilter === "all"
+                  ? null
+                  : STATUS_META[statusFilter].label
+              }
+            />
+            <ul className="space-y-2">
+              {filtered.map((exec) => (
+                <ExecutionRow
+                  key={exec.id}
+                  exec={exec}
+                  busy={actingId === exec.id}
+                  disabled={busy}
+                  onOpen={() => setSelectedId(exec.id)}
+                  onRetry={onRetry}
+                  onStop={onStop}
+                  onDelete={() => void onDelete(exec)}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </>
@@ -723,12 +761,15 @@ function StatusPill({
   active,
   label,
   count,
+  truncated,
   tone,
   onClick,
 }: {
   active: boolean;
   label: string;
   count: number;
+  /** Số liệu là tối thiểu (vượt trần quét) → hiển thị dấu "+". */
+  truncated?: boolean;
   tone?: Tone;
   onClick: () => void;
 }) {
@@ -748,8 +789,51 @@ function StatusPill({
         <span className={cn("h-1.5 w-1.5 rounded-full", TONE_DOT[tone])} />
       )}
       {label}
-      <span className="text-2xs tabular-nums opacity-70">{count}</span>
+      <span className="text-2xs tabular-nums opacity-70">
+        {count}
+        {truncated ? "+" : ""}
+      </span>
     </button>
+  );
+}
+
+/** Thứ tự hiển thị các pill trạng thái (chỉ hiện cái có count &gt; 0). */
+const STATUS_ORDER: readonly N8nExecutionStatus[] = [
+  "success",
+  "error",
+  "crashed",
+  "canceled",
+  "running",
+  "waiting",
+  "new",
+  "unknown",
+];
+
+/** Dòng "Hiển thị N / tổng M" ngay trên danh sách (làm rõ list là phân trang). */
+function ListMeta({
+  shown,
+  total,
+  truncated,
+  statusLabel,
+}: {
+  shown: number;
+  total: number;
+  truncated?: boolean;
+  statusLabel: string | null;
+}) {
+  return (
+    <p className="mb-2.5 text-xs text-muted-foreground">
+      Hiển thị{" "}
+      <span className="font-medium tabular-nums text-foreground/80">
+        {shown}
+      </span>{" "}
+      / tổng{" "}
+      <span className="font-medium tabular-nums text-foreground/80">
+        {total}
+        {truncated ? "+" : ""}
+      </span>{" "}
+      lần chạy{statusLabel ? ` ${statusLabel.toLowerCase()}` : ""}
+    </p>
   );
 }
 

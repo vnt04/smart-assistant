@@ -10,7 +10,9 @@ import {
   type N8nExecutionDetail,
   type N8nExecutionError,
   type N8nExecutionListResponse,
+  type N8nExecutionStats,
   type N8nExecutionStatus,
+  type N8nExecutionStatusCounts,
   type N8nExecutionTag,
   type N8nRetryResponse,
 } from "@assistant/shared";
@@ -35,6 +37,11 @@ const WORKFLOW_FETCH_LIMIT = 250;
 const WORKFLOW_NAME_TTL_MS = 5 * 60 * 1000;
 /** Trần kích thước JSON dữ liệu execution trả cho client (cắt bớt nếu vượt). */
 const MAX_DATA_JSON_CHARS = 300_000;
+/** Thống kê: cỡ mỗi trang khi quét, và trần số trang (để không quét vô hạn). */
+const STATS_PAGE_SIZE = 250;
+const STATS_MAX_PAGES = 40;
+/** Cache thống kê theo user — quét phân trang khá nặng, tránh gọi n8n liên tục. */
+const STATS_TTL_MS = 30 * 1000;
 
 interface N8nRequest {
   method: "GET" | "POST" | "DELETE";
@@ -45,6 +52,11 @@ interface N8nRequest {
 
 interface WorkflowNameCache {
   names: Map<string, string>;
+  expiresAt: number;
+}
+
+interface StatsCache {
+  stats: N8nExecutionStats;
   expiresAt: number;
 }
 
@@ -60,6 +72,8 @@ export class N8nService {
   private readonly logger = new Logger(N8nService.name);
   /** Cache tên workflow theo user (executions chỉ trả workflowId, không trả tên). */
   private readonly workflowNames = new Map<string, WorkflowNameCache>();
+  /** Cache thống kê theo user (quét phân trang nặng → TTL ngắn, xem STATS_TTL_MS). */
+  private readonly statsByUser = new Map<string, StatsCache>();
 
   constructor(private readonly settings: SettingsService) {}
 
@@ -88,6 +102,59 @@ export class N8nService {
       }));
 
     return { results, count: results.length };
+  }
+
+  /**
+   * Thống kê execution trên TOÀN BỘ (không giới hạn theo trang đang xem): quét
+   * phân trang qua n8n bằng `nextCursor`, đếm theo trạng thái. Kết quả cache ngắn
+   * (STATS_TTL_MS) vì frontend gọi định kỳ (badge ở nút + drawer tự làm mới).
+   *
+   * Quét tối đa STATS_MAX_PAGES trang; nếu vẫn còn → `truncated = true` (con số là
+   * tối thiểu). Chỉ lấy danh sách (không `includeData`) nên payload mỗi trang nhẹ.
+   */
+  async getExecutionStats(userId: string): Promise<N8nExecutionStats> {
+    const cached = this.statsByUser.get(userId);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) return cached.stats;
+
+    const cfg = await this.requireConfig(userId);
+    const counts = emptyStatusCounts();
+    let total = 0;
+    let truncated = false;
+    let cursor: string | null = null;
+    let page = 0;
+
+    do {
+      const qs =
+        `?limit=${STATS_PAGE_SIZE}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
+      const raw = await this.request(cfg, `/api/v1/executions${qs}`, {
+        method: "GET",
+      });
+
+      for (const item of unwrapList(raw)) {
+        const exec = mapExecution(item);
+        if (!exec) continue;
+        counts[exec.status] += 1;
+        total += 1;
+      }
+
+      cursor = pickNextCursor(raw);
+      page += 1;
+      if (cursor && page >= STATS_MAX_PAGES) {
+        truncated = true;
+        cursor = null;
+      }
+    } while (cursor);
+
+    const stats: N8nExecutionStats = {
+      total,
+      byStatus: counts,
+      failed: counts.error + counts.crashed,
+      truncated,
+    };
+    this.statsByUser.set(userId, { stats, expiresAt: now + STATS_TTL_MS });
+    return stats;
   }
 
   /**
@@ -122,6 +189,8 @@ export class N8nService {
     try {
       // Lỗi nhanh sẽ làm `pending` reject trước → propagate ra ngoài.
       const outcome = await Promise.race([pending, grace]);
+      // Tới đây là retry đã phát đi (không fast-fail) → có lần chạy mới.
+      this.statsByUser.delete(userId);
       if (outcome === TIMED_OUT) {
         // Còn đang chạy: để chạy nền, chỉ log (tránh unhandled rejection).
         void pending.then(
@@ -148,6 +217,7 @@ export class N8nService {
     await this.request(cfg, `/api/v1/executions/${encodeURIComponent(id)}`, {
       method: "DELETE",
     });
+    this.statsByUser.delete(userId); // tổng/đếm đã đổi → buộc tính lại
   }
 
   /** Dừng một execution đang chạy/chờ. */
@@ -158,6 +228,7 @@ export class N8nService {
       `/api/v1/executions/${encodeURIComponent(id)}/stop`,
       { method: "POST" },
     );
+    this.statsByUser.delete(userId); // trạng thái đã đổi → buộc tính lại
   }
 
   /** Chi tiết execution: kèm dữ liệu thô, lỗi đã trích, và tags. */
@@ -327,6 +398,29 @@ export class N8nService {
       clearTimeout(timer);
     }
   }
+}
+
+/** Bản đếm trạng thái khởi tạo 0 cho mọi key (dùng cho thống kê). */
+function emptyStatusCounts(): N8nExecutionStatusCounts {
+  return {
+    new: 0,
+    running: 0,
+    waiting: 0,
+    success: 0,
+    error: 0,
+    canceled: 0,
+    crashed: 0,
+    unknown: 0,
+  };
+}
+
+/** Con trỏ trang kế của collection public API (`{ data, nextCursor }`); hết → null. */
+function pickNextCursor(raw: unknown): string | null {
+  if (raw && typeof raw === "object") {
+    const cursor = (raw as { nextCursor?: unknown }).nextCursor;
+    if (typeof cursor === "string" && cursor) return cursor;
+  }
+  return null;
 }
 
 /** n8n giới hạn số bản ghi: clamp về [1, MAX_LIMIT], mặc định DEFAULT_LIMIT. */

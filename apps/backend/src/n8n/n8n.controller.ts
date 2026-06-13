@@ -15,6 +15,7 @@ import {
   retryExecutionInputSchema,
   type N8nExecutionDetail,
   type N8nExecutionListResponse,
+  type N8nExecutionStats,
   type N8nRetryResponse,
   type RetryExecutionInput,
 } from "@assistant/shared";
@@ -43,6 +44,12 @@ export class N8nController {
     @Query("limit") limit?: string,
   ): Promise<N8nExecutionListResponse> {
     return this.svc.listExecutions(user.id, parseLimit(limit));
+  }
+
+  // Phải khai báo TRƯỚC "executions/:id" để "stats" không bị :id bắt nhầm.
+  @Get("executions/stats")
+  stats(@CurrentUser() user: UserEntity): Promise<N8nExecutionStats> {
+    return this.svc.getExecutionStats(user.id);
   }
 
   @Get("executions/:id")

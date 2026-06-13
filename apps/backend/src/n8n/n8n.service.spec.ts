@@ -250,6 +250,84 @@ describe("N8nService.stopExecution", () => {
   });
 });
 
+describe("N8nService.getExecutionStats", () => {
+  /** fetch giả lập trả từng trang executions theo thứ tự gọi (mô phỏng cursor). */
+  function execFetch(
+    pages: Array<{ data: unknown[]; nextCursor: string | null }>,
+  ): jest.Mock {
+    let i = 0;
+    const fn = jest.fn().mockImplementation(() => {
+      const page = pages[Math.min(i, pages.length - 1)];
+      i += 1;
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        text: async () => JSON.stringify(page),
+      } as unknown as Response);
+    });
+    (global as { fetch: unknown }).fetch = fn;
+    return fn;
+  }
+
+  it("đếm theo status trên toàn bộ, đi theo nextCursor, failed = error + crashed", async () => {
+    const svc = makeService(CONFIG);
+    const fetchMock = execFetch([
+      {
+        data: [
+          { id: 1, status: "success", finished: true },
+          { id: 2, status: "error", finished: true },
+          { id: 3, status: "crashed", finished: true },
+        ],
+        nextCursor: "c1",
+      },
+      {
+        data: [
+          { id: 4, status: "success", finished: true },
+          { id: 5, status: "canceled", finished: true },
+        ],
+        nextCursor: null,
+      },
+    ]);
+
+    const stats = await svc.getExecutionStats("u1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(stats.total).toBe(5);
+    expect(stats.byStatus.success).toBe(2);
+    expect(stats.byStatus.error).toBe(1);
+    expect(stats.byStatus.crashed).toBe(1);
+    expect(stats.byStatus.canceled).toBe(1);
+    expect(stats.failed).toBe(2);
+    expect(stats.truncated).toBe(false);
+    expect(fetchMock.mock.calls[1][0] as string).toContain("cursor=c1");
+  });
+
+  it("cache trong TTL: gọi lần 2 không fetch lại", async () => {
+    const svc = makeService(CONFIG);
+    const fetchMock = execFetch([
+      { data: [{ id: 1, status: "success" }], nextCursor: null },
+    ]);
+
+    await svc.getExecutionStats("u1");
+    await svc.getExecutionStats("u1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("đặt truncated khi vượt trần số trang quét", async () => {
+    const svc = makeService(CONFIG);
+    // Luôn còn cursor → service dừng ở trần và đánh dấu truncated.
+    const fetchMock = execFetch([
+      { data: [{ id: 1, status: "success" }], nextCursor: "more" },
+    ]);
+
+    const stats = await svc.getExecutionStats("u1");
+
+    expect(stats.truncated).toBe(true);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
 describe("N8nService.getExecution", () => {
   it("maps detail, extracts the error, tags, and includes raw dataJson", async () => {
     const svc = makeService(CONFIG);

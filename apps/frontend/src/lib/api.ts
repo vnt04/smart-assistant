@@ -33,6 +33,7 @@ import {
   techFacetListResponseSchema,
   n8nExecutionListResponseSchema,
   n8nExecutionDetailSchema,
+  n8nExecutionStatsSchema,
   n8nRetryResponseSchema,
   walletSchema,
   type AiConversation,
@@ -104,6 +105,7 @@ import {
   type TechFacet,
   type N8nExecutionListResponse,
   type N8nExecutionDetail,
+  type N8nExecutionStats,
   type N8nRetryResponse,
   type Wallet,
 } from "@assistant/shared";
@@ -772,6 +774,10 @@ export const api = {
     n8nExecutionListResponseSchema.parse(
       await request(`/n8n/executions?limit=${limit}`),
     ),
+
+  // Thống kê trên TOÀN BỘ executions (badge số lỗi + đếm theo status ở drawer).
+  getN8nExecutionStats: async (): Promise<N8nExecutionStats> =>
+    n8nExecutionStatsSchema.parse(await request("/n8n/executions/stats")),
 
   getN8nExecution: async (id: string): Promise<N8nExecutionDetail> =>
     n8nExecutionDetailSchema.parse(
