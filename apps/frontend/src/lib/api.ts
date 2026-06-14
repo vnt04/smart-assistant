@@ -35,6 +35,10 @@ import {
   n8nExecutionDetailSchema,
   n8nExecutionStatsSchema,
   n8nRetryResponseSchema,
+  jobSyncOverviewSchema,
+  jobSyncSourceSchema,
+  jobSyncRunSchema,
+  jobSyncRunListResponseSchema,
   walletSchema,
   type AiConversation,
   type AiConversationDetail,
@@ -107,6 +111,12 @@ import {
   type N8nExecutionDetail,
   type N8nExecutionStats,
   type N8nRetryResponse,
+  type JobSyncOverview,
+  type JobSyncSource,
+  type JobSyncRun,
+  type JobSyncRunListResponse,
+  type CreateJobSyncSourceInput,
+  type UpdateJobSyncSourceInput,
   type Wallet,
 } from "@assistant/shared";
 import { z } from "zod";
@@ -802,6 +812,43 @@ export const api = {
 
   deleteN8nExecution: async (id: string): Promise<void> =>
     request(`/n8n/executions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  // Job Sync — đồng bộ việc làm tự động (cron VietnamWorks)
+  getJobSyncOverview: async (): Promise<JobSyncOverview> =>
+    jobSyncOverviewSchema.parse(await request("/job-sync/overview")),
+
+  createJobSyncSource: async (
+    input: CreateJobSyncSourceInput,
+  ): Promise<JobSyncSource> =>
+    jobSyncSourceSchema.parse(
+      await request("/job-sync/sources", { method: "POST", body: input }),
+    ),
+
+  updateJobSyncSource: async (
+    id: string,
+    input: UpdateJobSyncSourceInput,
+  ): Promise<JobSyncSource> =>
+    jobSyncSourceSchema.parse(
+      await request(`/job-sync/sources/${id}`, { method: "PATCH", body: input }),
+    ),
+
+  deleteJobSyncSource: async (id: string): Promise<void> =>
+    request(`/job-sync/sources/${id}`, { method: "DELETE" }),
+
+  runJobSyncSource: async (id: string): Promise<JobSyncRun> =>
+    jobSyncRunSchema.parse(
+      await request(`/job-sync/sources/${id}/run`, { method: "POST" }),
+    ),
+
+  listJobSyncRuns: async (
+    sourceId?: string,
+    limit = 50,
+  ): Promise<JobSyncRunListResponse> => {
+    const qs = toQuery({ sourceId, limit });
+    return jobSyncRunListResponseSchema.parse(
+      await request(`/job-sync/runs${qs}`),
+    );
+  },
 };
 
 function toQuery(query: Record<string, unknown>): string {

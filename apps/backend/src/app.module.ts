@@ -17,6 +17,7 @@ import { SettingsModule } from "./settings/settings.module";
 import { UsersModule } from "./users/users.module";
 import { VocabModule } from "./vocab/vocab.module";
 import { JobsModule } from "./jobs/jobs.module";
+import { JobSyncModule } from "./job-sync/job-sync.module";
 import { N8nModule } from "./n8n/n8n.module";
 
 @Module({
@@ -64,6 +65,7 @@ import { N8nModule } from "./n8n/n8n.module";
     AiModule,
     VocabModule,
     JobsModule,
+    JobSyncModule,
     N8nModule,
     HealthModule,
   ],

@@ -23,6 +23,7 @@ import {
   CalendarClock,
   ChevronDown,
   Clock,
+  DownloadCloud,
   ExternalLink,
   Loader2,
   MapPin,
@@ -44,6 +45,7 @@ import { Sheet, SheetContent, SheetTitle } from "../components/ui/sheet";
 import { MatchBadge } from "../components/jobs/MatchBadge";
 import { MatchProfileEditor } from "../components/jobs/MatchProfileEditor";
 import { WorkflowExecutionsDrawer } from "../components/jobs/WorkflowExecutionsDrawer";
+import { JobSyncDrawer } from "../components/jobs/JobSyncDrawer";
 import { CompanyLogo } from "../components/jobs/CompanyLogo";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -110,6 +112,7 @@ export function JobPage() {
   const [selected, setSelected] = useState<Job | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const jobsQuery = useQuery({
     queryKey: ["jobs", selectedTech],
@@ -134,6 +137,17 @@ export function JobPage() {
     retry: false,
   });
   const failedWorkflows = n8nStatsQuery.data?.failed ?? 0;
+
+  // Tổng quan đồng bộ việc làm (cron nội bộ) — badge số run lỗi ở nút "Đồng bộ".
+  // Cùng queryKey với drawer nên chia sẻ cache.
+  const jobSyncOverviewQuery = useQuery({
+    queryKey: ["job-sync-overview"],
+    queryFn: () => api.getJobSyncOverview(),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const failedSyncs = jobSyncOverviewQuery.data?.failedRuns ?? 0;
 
   // Barem chỉnh sửa cục bộ (live preview); seed một lần từ server khi tải xong.
   const [profileDraft, setProfileDraft] = useState<JobMatchProfile | null>(null);
@@ -405,6 +419,13 @@ export function JobPage() {
               <BarChart3 className="h-4 w-4" /> Thống kê
             </Link>
             <ToolbarToggle
+              icon={DownloadCloud}
+              active={syncOpen}
+              onClick={() => setSyncOpen(true)}
+              label="Đồng bộ"
+              badge={failedSyncs}
+            />
+            <ToolbarToggle
               icon={Workflow}
               active={workflowOpen}
               onClick={() => setWorkflowOpen(true)}
@@ -517,6 +538,8 @@ export function JobPage() {
         open={workflowOpen}
         onOpenChange={setWorkflowOpen}
       />
+
+      <JobSyncDrawer open={syncOpen} onOpenChange={setSyncOpen} />
 
       <MatchProfileEditor
         open={editorOpen}

@@ -21,6 +21,8 @@ import { BudgetEntity } from "../expense/entities/budget.entity";
 import { VocabItemEntity } from "../vocab/entities/vocab-item.entity";
 import { JobEntity } from "../jobs/entities/job.entity";
 import { TechnologyEntity } from "../jobs/entities/technology.entity";
+import { JobSyncSourceEntity } from "../job-sync/entities/job-sync-source.entity";
+import { JobSyncRunEntity } from "../job-sync/entities/job-sync-run.entity";
 
 @Module({
   imports: [
@@ -59,6 +61,8 @@ import { TechnologyEntity } from "../jobs/entities/technology.entity";
           VocabItemEntity,
           JobEntity,
           TechnologyEntity,
+          JobSyncSourceEntity,
+          JobSyncRunEntity,
         ],
         logging:
           config.get<string>("NODE_ENV") === "development"
