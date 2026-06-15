@@ -52,6 +52,10 @@ uploads/
 .temp/
 .tmp/
 
+# Code intelligence (GitNexus — local index + generated AGENTS.md, re-built per machine via `npx gitnexus analyze`)
+.gitnexus/
+AGENTS.md
+
 # Garbage
 *.stackdump
 *.log
