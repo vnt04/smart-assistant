@@ -571,7 +571,7 @@ function SourceForm({
                 )}
             </select>
           </Field>
-          <Field label="Số trang / từ khóa" hint="100 việc mỗi trang.">
+          <Field label="Số trang / từ khóa">
             <select
               value={draft.maxPages}
               onChange={(e) => set("maxPages", Number(e.target.value))}
@@ -583,22 +583,9 @@ function SourceForm({
                 </option>
               ))}
             </select>
+            <p className="mt-1 text-2xs text-muted-foreground">100 việc mỗi trang.</p>
           </Field>
         </div>
-
-        {draft.cityId !== null && (
-          <Field
-            label="Mã quận/huyện (tùy chọn)"
-            hint="Cách nhau bằng dấu phẩy. Để trống = tất cả quận/huyện."
-          >
-            <Input
-              value={draft.districtIds.join(", ")}
-              onChange={(e) => set("districtIds", parseIds(e.target.value))}
-              placeholder="VD: 1, 3, 10"
-              inputMode="numeric"
-            />
-          </Field>
-        )}
 
         <Field label="Lịch chạy">
           <div className="flex gap-1.5">
@@ -926,17 +913,6 @@ function scheduleSummary(schedule: JobSyncSchedule): string {
     return `Mỗi ${opt?.label ?? `${schedule.everyMinutes} phút`}`;
   }
   return `Hằng ngày ${schedule.times.join(", ")}`;
-}
-
-function parseIds(value: string): number[] {
-  return [
-    ...new Set(
-      value
-        .split(",")
-        .map((part) => Number(part.trim()))
-        .filter((n) => Number.isInteger(n) && n > 0),
-    ),
-  ];
 }
 
 function formatTime(value: string): string {
