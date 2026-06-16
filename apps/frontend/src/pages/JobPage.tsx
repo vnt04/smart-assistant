@@ -6,14 +6,22 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   DEFAULT_JOB_MATCH_PROFILE,
   scoreJob,
   type Job,
+  type JobFacetCount,
   type JobMatchProfile,
   type JobMatchResult,
+  type JobSearchInput,
+  type JobSearchSummary,
   type TechFacet,
 } from "@assistant/shared";
 import {
@@ -22,6 +30,8 @@ import {
   Calendar,
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   DownloadCloud,
   ExternalLink,
@@ -49,13 +59,15 @@ import { JobSyncDrawer } from "../components/jobs/JobSyncDrawer";
 import { CompanyLogo } from "../components/jobs/CompanyLogo";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
+import { useDebounce } from "../lib/use-debounce";
 
 type SortKey = "match" | "crawl" | "posted" | "salary";
 
-interface CountOption {
-  value: string;
-  count: number;
-}
+/** Số job mỗi trang (server-side pagination). */
+const PAGE_SIZE = 24;
+
+/** CountOption khớp cấu trúc `JobFacetCount` ({value, count}) từ server. */
+type CountOption = JobFacetCount;
 
 interface SearchOption {
   value: string;
@@ -94,9 +106,10 @@ const MIN_SCORE_PILLS: { value: number; label: string }[] = [
 export function JobPage() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // `now` cố định trong suốt phiên xem để bộ lọc "ngày đăng", độ mới và thống kê
-  // ổn định, không nhảy số khi component re-render.
+  // `now` cố định trong suốt phiên xem để chấm điểm hiển thị (badge) ổn định,
+  // không nhảy số khi component re-render. (Thứ tự/ẩn do server quyết định.)
   const [now] = useState(() => Date.now());
 
   const [search, setSearch] = useState("");
@@ -109,18 +122,15 @@ export function JobPage() {
   const [salary, setSalary] = useState("");
   const [posted, setPosted] = useState("");
   const [selectedTech, setSelectedTech] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Job | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
 
-  const jobsQuery = useQuery({
-    queryKey: ["jobs", selectedTech],
-    queryFn: () => api.listJobs(selectedTech),
-  });
   const facetsQuery = useQuery({
-    queryKey: ["job-tech-facets"],
-    queryFn: api.listTechFacets,
+    queryKey: ["jobs-facets"],
+    queryFn: api.listJobFacets,
   });
   const matchQuery = useQuery({
     queryKey: ["job-match-profile"],
@@ -173,14 +183,13 @@ export function JobPage() {
   const deleteMutation = useMutation({
     mutationFn: api.deleteJob,
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["jobs-search"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs-facets"] });
+      // JobStatsPage dùng key ["jobs", []] — invalidate để nó cũng cập nhật.
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
-      void queryClient.invalidateQueries({ queryKey: ["job-tech-facets"] });
       setSelected(null);
     },
   });
-
-  const jobs = useMemo(() => jobsQuery.data ?? [], [jobsQuery.data]);
-  const facets = facetsQuery.data ?? [];
 
   // Đổi barem → nếu vừa bật matching và user chưa tự đổi sort, ưu tiên sort theo điểm.
   function handleProfileChange(next: JobMatchProfile): void {
@@ -188,24 +197,80 @@ export function JobPage() {
     setProfileDraft(next);
   }
 
+  // Gom các thay đổi gõ phím / kéo slider barem thành một lần gọi server.
+  const debouncedSearch = useDebounce(search, 300);
+  const debouncedProfile = useDebounce(profile, 400);
+  // Danh sách phản ánh barem ĐÃ debounce (đồng bộ với điểm server trả về); UI
+  // (nút barem, sort, ngưỡng điểm) phản ánh `profile` tức thời.
+  const listMatchEnabled = debouncedProfile.enabled;
+
+  // Tiêu chí truy vấn (KHÔNG gồm page) — đổi nó thì reset về trang 1.
+  const searchArgs = useMemo<Omit<JobSearchInput, "page">>(
+    () => ({
+      q: debouncedSearch.trim() || undefined,
+      tech: selectedTech.length ? selectedTech : undefined,
+      level: levels.length ? levels : undefined,
+      employmentType: types.length ? types : undefined,
+      source: sources.length ? sources : undefined,
+      location: locations.length ? locations : undefined,
+      salaryBucket: (salary || undefined) as JobSearchInput["salaryBucket"],
+      postedWithinDays: posted ? Number(posted) : undefined,
+      sort,
+      limit: PAGE_SIZE,
+      matchProfile: debouncedProfile.enabled ? debouncedProfile : undefined,
+    }),
+    [
+      debouncedSearch,
+      selectedTech,
+      levels,
+      types,
+      sources,
+      locations,
+      salary,
+      posted,
+      sort,
+      debouncedProfile,
+    ],
+  );
+
+  // Reset trang khi bất kỳ tiêu chí nào (trừ page) đổi.
+  useEffect(() => {
+    setPage(1);
+  }, [searchArgs]);
+
+  const jobsQuery = useQuery({
+    queryKey: ["jobs-search", searchArgs, page],
+    queryFn: () => api.searchJobs({ ...searchArgs, page }),
+    placeholderData: keepPreviousData, // giữ trang cũ khi chuyển trang (đỡ nháy)
+  });
+
+  const items = useMemo(() => jobsQuery.data?.items ?? [], [jobsQuery.data]);
+  const meta = jobsQuery.data?.meta;
+  const summary = jobsQuery.data?.summary;
+  const facets = facetsQuery.data;
+  const techFacets = useMemo(() => facets?.tech ?? [], [facets]);
+
+  // Kẹp trang về cuối nếu vượt quá tổng số trang (vd sau khi lọc còn ít trang).
+  useEffect(() => {
+    if (meta && page > meta.totalPages) setPage(meta.totalPages);
+  }, [meta, page]);
+
+  // Chỉ chấm điểm ≤PAGE_SIZE item của trang để vẽ badge/breakdown (rẻ); thứ tự
+  // và việc ẩn job do server quyết định, client chỉ hiển thị.
   const scoredById = useMemo(() => {
     const map = new Map<string, JobMatchResult>();
-    if (matchEnabled) {
-      for (const job of jobs) map.set(job.id, scoreJob(job, profile, now));
+    if (listMatchEnabled) {
+      for (const job of items) {
+        map.set(job.id, scoreJob(job, debouncedProfile, now));
+      }
     }
     return map;
-  }, [jobs, profile, matchEnabled, now]);
+  }, [items, listMatchEnabled, debouncedProfile, now]);
 
-  const levelOptions = useMemo(() => countBy(jobs, (j) => j.level), [jobs]);
-  const typeOptions = useMemo(
-    () => countBy(jobs, (j) => j.employmentType),
-    [jobs],
-  );
-  const sourceOptions = useMemo(() => countBy(jobs, (j) => j.source), [jobs]);
-  const locationOptions = useMemo(
-    () => countBy(jobs, (j) => j.location || null),
-    [jobs],
-  );
+  const levelOptions = useMemo(() => facets?.levels ?? [], [facets]);
+  const typeOptions = useMemo(() => facets?.employmentTypes ?? [], [facets]);
+  const sourceOptions = useMemo(() => facets?.sources ?? [], [facets]);
+  const locationOptions = useMemo(() => facets?.locations ?? [], [facets]);
 
   const toggleLevel = (v: string) => toggleIn(setLevels, v);
   const toggleType = (v: string) => toggleIn(setTypes, v);
@@ -227,63 +292,10 @@ export function JobPage() {
     if (profile.minScore != null) setMinScore(null);
   }
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const result = jobs.filter((job) => {
-      if (matchEnabled && scoredById.get(job.id)?.hidden) return false;
-      if (levels.length && (!job.level || !levels.includes(job.level)))
-        return false;
-      if (
-        types.length &&
-        (!job.employmentType || !types.includes(job.employmentType))
-      )
-        return false;
-      if (sources.length && !sources.includes(job.source)) return false;
-      if (locations.length && (!job.location || !locations.includes(job.location)))
-        return false;
-      if (salary && salaryBucketOf(job) !== salary) return false;
-      if (posted && !withinDays(job, Number(posted), now)) return false;
-      if (!query) return true;
-      return (
-        job.title.toLowerCase().includes(query) ||
-        job.company.toLowerCase().includes(query) ||
-        job.location.toLowerCase().includes(query) ||
-        job.techStack.some((t) => t.toLowerCase().includes(query))
-      );
-    });
-
-    if (sort === "match" && matchEnabled) {
-      return [...result].sort(
-        (a, b) =>
-          (scoredById.get(b.id)?.score ?? -1) -
-          (scoredById.get(a.id)?.score ?? -1),
-      );
-    }
-    return sortJobs(result, sort);
-  }, [
-    jobs,
-    search,
-    levels,
-    types,
-    sources,
-    locations,
-    salary,
-    posted,
-    sort,
-    now,
-    matchEnabled,
-    scoredById,
-  ]);
-
-  const stats = useMemo(
-    () => computeStats(filtered, now, scoredById, matchEnabled),
-    [filtered, now, scoredById, matchEnabled],
-  );
-
   const techNameOf = useMemo(() => {
-    const map = new Map(facets.map((f) => [f.slug, f.name]));
+    const map = new Map(techFacets.map((f) => [f.slug, f.name]));
     return (slug: string) => map.get(slug) ?? slug;
-  }, [facets]);
+  }, [techFacets]);
 
   const activeChips = useMemo<ActiveChip[]>(() => {
     const chips: ActiveChip[] = [];
@@ -355,14 +367,22 @@ export function JobPage() {
     if (confirmed) deleteMutation.mutate(job.id);
   }
 
-  const hasJobs = jobs.length > 0;
+  const total = meta?.total ?? 0;
+  const hasResults = total > 0;
+  // Không lọc + 0 kết quả ⇒ bảng rỗng thật (search không lọc trả về tất cả).
+  const noFilters = !hasFilter && debouncedSearch.trim().length === 0;
   const sortOptions = matchEnabled
     ? SORT_OPTIONS
     : SORT_OPTIONS.filter((o) => o.value !== "match");
   const sortValue = matchEnabled ? sort : sort === "match" ? "crawl" : sort;
 
+  function goToPage(p: number): void {
+    setPage(p);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
-    <div className="h-full overflow-y-auto scrollbar-thin">
+    <div ref={scrollRef} className="h-full overflow-y-auto scrollbar-thin">
       <div className="mx-auto max-w-[1500px] px-4 py-8 sm:px-6 md:px-8 md:py-10">
         <header className="relative animate-fade-in">
           <div className="pointer-events-none absolute -left-10 -top-16 h-40 w-40 rounded-full bg-dot-orange/10 blur-3xl" />
@@ -460,15 +480,18 @@ export function JobPage() {
               onSalaryChange={setSalary}
               posted={posted}
               onPostedChange={setPosted}
-              facets={facets}
+              facets={techFacets}
               selectedTech={selectedTech}
               onToggleTech={toggleTech}
             />
           </aside>
 
           <main className="min-w-0">
-            {hasJobs && (
-              <StatsBar stats={stats} filtered={hasFilter || search.length > 0} />
+            {summary && hasResults && (
+              <StatsBar
+                summary={summary}
+                filtered={hasFilter || debouncedSearch.length > 0}
+              />
             )}
 
             {activeChips.length > 0 && (
@@ -476,34 +499,42 @@ export function JobPage() {
             )}
 
             <div className="mt-4">
-              {jobsQuery.isLoading ? (
+              {jobsQuery.isPending ? (
                 <LoadingState />
               ) : jobsQuery.isError ? (
                 <ErrorState onRetry={() => void jobsQuery.refetch()} />
-              ) : !hasJobs ? (
-                selectedTech.length > 0 ? (
-                  <EmptyFilter />
-                ) : (
+              ) : !hasResults ? (
+                noFilters ? (
                   <EmptyState />
+                ) : (
+                  <EmptyFilter />
                 )
-              ) : filtered.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                  Không có công việc nào khớp bộ lọc.
-                </p>
               ) : (
                 <>
-                  <SectionLabel>{filtered.length} công việc</SectionLabel>
+                  <SectionLabel>{total} công việc</SectionLabel>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {filtered.map((job, index) => (
+                    {items.map((job, index) => (
                       <JobCard
                         key={job.id}
                         job={job}
-                        match={matchEnabled ? scoredById.get(job.id) ?? null : null}
+                        match={
+                          listMatchEnabled
+                            ? scoredById.get(job.id) ?? null
+                            : null
+                        }
                         delayMs={Math.min(index * 30, 240)}
                         onOpen={() => setSelected(job)}
                       />
                     ))}
                   </div>
+                  {meta && (
+                    <JobsPagination
+                      page={meta.page}
+                      totalPages={meta.totalPages}
+                      total={total}
+                      onPage={goToPage}
+                    />
+                  )}
                 </>
               )}
             </div>
@@ -525,7 +556,7 @@ export function JobPage() {
             <JobDetail
               job={selected}
               match={
-                matchEnabled ? scoredById.get(selected.id) ?? null : null
+                listMatchEnabled ? scoredById.get(selected.id) ?? null : null
               }
               onDelete={() => handleDelete(selected)}
               isDeleting={deleteMutation.isPending}
@@ -550,7 +581,7 @@ export function JobPage() {
         onReset={() => handleProfileChange(DEFAULT_JOB_MATCH_PROFILE)}
         isSaving={saveMutation.isPending}
         isDirty={isDirty}
-        facets={facets}
+        facets={techFacets}
         levelOptions={levelOptions.map((o) => o.value)}
         typeOptions={typeOptions.map((o) => o.value)}
         locationOptions={locationOptions.map((o) => o.value)}
@@ -983,19 +1014,6 @@ function ActiveFilters({
 
 /* -------------------- Stats -------------------- */
 
-interface Stats {
-  total: number;
-  new7: number;
-  withSalaryCount: number;
-  medianSalary: number;
-  matchEnabled: boolean;
-  matchAvg: number;
-  matchTop: number;
-  byLevel: CountOption[];
-  bySource: CountOption[];
-  topCompanies: CountOption[];
-}
-
 type Tone = "orange" | "green" | "blue" | "purple";
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -1005,28 +1023,34 @@ const TONE_CLASS: Record<Tone, string> = {
   purple: "bg-dot-purple/10 text-dot-purple",
 };
 
-function StatsBar({ stats, filtered }: { stats: Stats; filtered: boolean }) {
+function StatsBar({
+  summary,
+  filtered,
+}: {
+  summary: JobSearchSummary;
+  filtered: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       <MetricCard
         icon={Briefcase}
         tone="orange"
-        value={String(stats.total)}
+        value={String(summary.total)}
         label={filtered ? "Khớp bộ lọc" : "Tổng công việc"}
       />
       <MetricCard
         icon={CalendarClock}
         tone="green"
-        value={String(stats.new7)}
+        value={String(summary.new7)}
         label="Mới 7 ngày"
       />
       <MetricCard
         icon={Wallet}
         tone="blue"
-        value={String(stats.withSalaryCount)}
+        value={String(summary.withSalaryCount)}
         label={
-          stats.medianSalary > 0
-            ? `Có lương · TV ${formatSalaryShort(stats.medianSalary)}`
+          summary.medianSalary > 0
+            ? `Có lương · TV ${formatSalaryShort(summary.medianSalary)}`
             : "Có lương"
         }
       />
@@ -1034,12 +1058,14 @@ function StatsBar({ stats, filtered }: { stats: Stats; filtered: boolean }) {
         icon={Sparkles}
         tone="purple"
         value={
-          stats.matchEnabled && stats.matchAvg > 0 ? `${stats.matchAvg}%` : "—"
+          summary.matchEnabled && summary.matchAvg > 0
+            ? `${summary.matchAvg}%`
+            : "—"
         }
         label={
-          stats.matchEnabled
-            ? stats.matchTop > 0
-              ? `Phù hợp TB · ${stats.matchTop} rất phù hợp`
+          summary.matchEnabled
+            ? summary.matchTop > 0
+              ? `Phù hợp TB · ${summary.matchTop} rất phù hợp`
               : "Phù hợp trung bình"
             : "Chưa bật barem"
         }
@@ -1488,8 +1514,121 @@ function LoadingState() {
 function EmptyFilter() {
   return (
     <p className="rounded-2xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-      Không có công việc nào dùng công nghệ đã chọn.
+      Không có công việc nào khớp bộ lọc.
     </p>
+  );
+}
+
+/* -------------------- Pagination -------------------- */
+
+/**
+ * Dải số trang rút gọn: luôn hiện trang đầu/cuối + lân cận trang hiện tại (±1),
+ * chèn `"…"` cho khoảng bị bỏ. Ví dụ (current=5, total=20):
+ * `[1, "…", 4, 5, 6, "…", 20]`. Trả về số trang hoặc ký tự `"…"`.
+ */
+function pageWindow(current: number, total: number): Array<number | "…"> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: Array<number | "…"> = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push("…");
+  for (let p = start; p <= end; p++) pages.push(p);
+  if (end < total - 1) pages.push("…");
+  pages.push(total);
+  return pages;
+}
+
+function JobsPagination({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  const pages = pageWindow(page, totalPages);
+  return (
+    <nav
+      className="mt-6 flex flex-col items-center gap-2"
+      aria-label="Phân trang"
+    >
+      <div className="flex items-center gap-1">
+        <PagerBtn
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          ariaLabel="Trang trước"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </PagerBtn>
+        {pages.map((p, i) =>
+          p === "…" ? (
+            <span
+              key={`ellipsis-${i}`}
+              className="px-1.5 text-sm text-muted-foreground"
+            >
+              …
+            </span>
+          ) : (
+            <PagerBtn
+              key={p}
+              active={p === page}
+              onClick={() => onPage(p)}
+              ariaLabel={`Trang ${p}`}
+            >
+              {p}
+            </PagerBtn>
+          ),
+        )}
+        <PagerBtn
+          disabled={page >= totalPages}
+          onClick={() => onPage(page + 1)}
+          ariaLabel="Trang sau"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </PagerBtn>
+      </div>
+      <p className="text-2xs text-muted-foreground">
+        Trang {page}/{totalPages} · {total} việc
+      </p>
+    </nav>
+  );
+}
+
+function PagerBtn({
+  children,
+  onClick,
+  active,
+  disabled,
+  ariaLabel,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "inline-flex h-9 min-w-9 items-center justify-center rounded-md border px-2.5 text-sm font-medium tabular-nums transition-colors disabled:pointer-events-none disabled:opacity-40",
+        active
+          ? "border-dot-orange/30 bg-dot-orange/10 text-dot-orange"
+          : "border-input bg-background text-foreground hover:bg-accent",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -1535,104 +1674,6 @@ function toggleIn(
   setter((prev) =>
     prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
   );
-}
-
-function countBy(
-  jobs: Job[],
-  pick: (job: Job) => string | null,
-): CountOption[] {
-  const map = new Map<string, number>();
-  for (const job of jobs) {
-    const value = pick(job);
-    if (!value) continue;
-    map.set(value, (map.get(value) ?? 0) + 1);
-  }
-  return [...map.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-}
-
-/** Lương đại diện của job (VND): ưu tiên trần, rồi sàn; không có → -1. */
-function repSalary(job: Job): number {
-  return job.salaryMax ?? job.salaryMin ?? -1;
-}
-
-function salaryBucketOf(job: Job): string {
-  if (job.salaryMin == null && job.salaryMax == null) return "thoa-thuan";
-  const rep = repSalary(job);
-  if (rep < 15_000_000) return "0-15";
-  if (rep < 30_000_000) return "15-30";
-  if (rep < 50_000_000) return "30-50";
-  return "50+";
-}
-
-/** Mốc thời gian của job: ưu tiên ngày đăng, thiếu thì dùng thời điểm crawl. */
-function jobTime(job: Job): number {
-  const value = job.postedAt ?? job.crawlAt;
-  const t = new Date(value).getTime();
-  return Number.isNaN(t) ? 0 : t;
-}
-
-function withinDays(job: Job, days: number, now: number): boolean {
-  const t = jobTime(job);
-  if (!t) return false;
-  return now - t <= days * 24 * 60 * 60 * 1000;
-}
-
-function computeStats(
-  jobs: Job[],
-  now: number,
-  scored: Map<string, JobMatchResult>,
-  matchEnabled: boolean,
-): Stats {
-  const withSalary = jobs.filter((j) => salaryBucketOf(j) !== "thoa-thuan");
-  const reps = withSalary
-    .map(repSalary)
-    .filter((n) => n > 0)
-    .sort((a, b) => a - b);
-  const medianSalary = reps.length
-    ? reps[Math.floor((reps.length - 1) / 2)]
-    : 0;
-
-  let matchAvg = 0;
-  let matchTop = 0;
-  if (matchEnabled && jobs.length > 0) {
-    const scores = jobs.map((j) => scored.get(j.id)?.score ?? 0);
-    matchAvg = Math.round(scores.reduce((s, n) => s + n, 0) / scores.length);
-    matchTop = scores.filter((s) => s >= 80).length;
-  }
-
-  return {
-    total: jobs.length,
-    new7: jobs.filter((j) => withinDays(j, 7, now)).length,
-    withSalaryCount: withSalary.length,
-    medianSalary,
-    matchEnabled,
-    matchAvg,
-    matchTop,
-    byLevel: countBy(jobs, (j) => j.level).slice(0, 6),
-    bySource: countBy(jobs, (j) => j.source).slice(0, 6),
-    topCompanies: countBy(jobs, (j) => j.company || null).slice(0, 6),
-  };
-}
-
-function sortJobs(jobs: Job[], key: SortKey): Job[] {
-  const sorted = [...jobs];
-  if (key === "posted") {
-    sorted.sort((a, b) => dateValue(b.postedAt) - dateValue(a.postedAt));
-  } else if (key === "salary") {
-    sorted.sort((a, b) => repSalary(b) - repSalary(a));
-  } else {
-    // "crawl" và fallback khi "match" nhưng barem tắt.
-    sorted.sort((a, b) => dateValue(b.crawlAt) - dateValue(a.crawlAt));
-  }
-  return sorted;
-}
-
-function dateValue(value: string | null): number {
-  if (!value) return 0;
-  const t = new Date(value).getTime();
-  return Number.isNaN(t) ? 0 : t;
 }
 
 function formatSalary(

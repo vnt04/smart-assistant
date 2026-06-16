@@ -7,17 +7,38 @@ import {
   In,
   QueryFailedError,
   Repository,
+  type SelectQueryBuilder,
 } from "typeorm";
 import {
   ingestJobInputSchema,
+  jobSearchInputSchema,
+  normalizeJobMatchProfile,
+  scoreJob,
   type IngestJobInput,
   type IngestJobResponse,
   type Job,
+  type JobFacetCount,
+  type JobFacetsResponse,
+  type JobMatchProfile,
+  type JobSearchInput,
+  type JobSearchResponse,
+  type JobSearchSummary,
   type TechFacet,
 } from "@assistant/shared";
 import { JobEntity } from "./entities/job.entity";
 import { TechnologyEntity } from "./entities/technology.entity";
 import { normalizeTechList, type NormalizedTech } from "./tech-normalize";
+import {
+  DAY_MS,
+  SALARY_15M,
+  SALARY_30M,
+  SALARY_50M,
+  escapeLike,
+  makeMeta,
+  sortScored,
+  summarizeScored,
+  type ScoredJob,
+} from "./jobs.search-utils";
 
 /** Mã lỗi driver MySQL khi vi phạm ràng buộc unique. */
 const MYSQL_DUPLICATE_ENTRY = "ER_DUP_ENTRY";
@@ -153,6 +174,233 @@ export class JobsService {
     }));
   }
 
+  /**
+   * Tìm/lọc/sắp xếp + phân trang phía server cho danh sách Jobs (`JobPage`).
+   * Hai nhánh: barem TẮT → SQL `LIMIT/OFFSET` thuần; barem BẬT → nạp cả tập đã
+   * lọc, chấm điểm bằng `scoreJob` (JS thuần, không biểu diễn được bằng SQL) rồi
+   * cắt trang. Body được Zod-validate ở đây nên controller truyền `unknown`.
+   */
+  async search(input: unknown): Promise<JobSearchResponse> {
+    const parsed = jobSearchInputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: "job_query_invalid",
+        message: "Tham số tìm kiếm không hợp lệ",
+        details: parsed.error.flatten(),
+      });
+    }
+    const q = parsed.data;
+    const profile =
+      q.matchProfile && q.matchProfile.enabled
+        ? normalizeJobMatchProfile(q.matchProfile)
+        : null;
+    return profile ? this.searchScored(q, profile) : this.searchPlain(q);
+  }
+
+  /** Facet đếm GLOBAL toàn bảng cho rail lọc + editor barem (fetch một lần). */
+  async listFacets(): Promise<JobFacetsResponse> {
+    const [levels, employmentTypes, sources, locations, tech] =
+      await Promise.all([
+        this.facetColumn("level"),
+        this.facetColumn("employmentType"),
+        this.facetColumn("source"),
+        this.facetColumn("location"),
+        this.listTechFacets(),
+      ]);
+    return { levels, employmentTypes, sources, locations, tech };
+  }
+
+  /**
+   * Dựng WHERE dùng chung cho cả hai nhánh search. Mỗi nhóm mảng là OR-trong-nhóm
+   * (qua `IN`); các nhóm AND với nhau. Lọc công nghệ qua subquery trên bảng nối
+   * (dùng index) thay vì join để không nhân dòng.
+   */
+  private buildFilteredQb(q: JobSearchInput): SelectQueryBuilder<JobEntity> {
+    const qb = this.repo.createQueryBuilder("j");
+
+    if (q.q) {
+      const kw = `%${escapeLike(q.q)}%`;
+      qb.andWhere(
+        "(j.title LIKE :kw OR j.company LIKE :kw OR j.location LIKE :kw)",
+        { kw },
+      );
+    }
+    if (q.level?.length) {
+      qb.andWhere("j.level IN (:...levels)", { levels: q.level });
+    }
+    if (q.employmentType?.length) {
+      qb.andWhere("j.employmentType IN (:...types)", { types: q.employmentType });
+    }
+    if (q.source?.length) {
+      qb.andWhere("j.source IN (:...sources)", { sources: q.source });
+    }
+    if (q.location?.length) {
+      qb.andWhere("j.location IN (:...locs)", { locs: q.location });
+    }
+
+    this.applySalaryBucket(qb, q.salaryBucket);
+
+    if (q.postedWithinDays != null) {
+      const since = new Date(Date.now() - q.postedWithinDays * DAY_MS);
+      qb.andWhere("COALESCE(j.postedAt, j.crawlAt) >= :since", { since });
+    }
+
+    if (q.tech?.length) {
+      qb.andWhere(
+        `j.id IN (SELECT jt.job_id FROM job_technologies jt
+          INNER JOIN technologies ft ON ft.id = jt.technology_id
+          WHERE ft.slug IN (:...slugs))`,
+        { slugs: q.tech },
+      );
+    }
+    return qb;
+  }
+
+  /** Lọc theo bucket lương; rep = `COALESCE(salary_max, salary_min)` khớp client. */
+  private applySalaryBucket(
+    qb: SelectQueryBuilder<JobEntity>,
+    bucket: JobSearchInput["salaryBucket"],
+  ): void {
+    if (!bucket) return;
+    if (bucket === "thoa-thuan") {
+      qb.andWhere("j.salaryMin IS NULL AND j.salaryMax IS NULL");
+      return;
+    }
+    const rep = "COALESCE(j.salaryMax, j.salaryMin)";
+    qb.andWhere(`${rep} IS NOT NULL`);
+    if (bucket === "0-15") {
+      qb.andWhere(`${rep} < :a`, { a: SALARY_15M });
+    } else if (bucket === "15-30") {
+      qb.andWhere(`${rep} >= :a AND ${rep} < :b`, {
+        a: SALARY_15M,
+        b: SALARY_30M,
+      });
+    } else if (bucket === "30-50") {
+      qb.andWhere(`${rep} >= :a AND ${rep} < :b`, {
+        a: SALARY_30M,
+        b: SALARY_50M,
+      });
+    } else if (bucket === "50+") {
+      qb.andWhere(`${rep} >= :a`, { a: SALARY_50M });
+    }
+  }
+
+  /** Nhánh barem TẮT — phân trang SQL thật (chọn id theo thứ tự rồi nạp DTO). */
+  private async searchPlain(q: JobSearchInput): Promise<JobSearchResponse> {
+    const total = await this.buildFilteredQb(q).getCount();
+
+    // `match` vô nghĩa khi barem tắt → quy về `crawl`.
+    const sort = q.sort === "match" ? "crawl" : q.sort;
+    const idQb = this.buildFilteredQb(q).select("j.id", "id");
+    applySortPlain(idQb, sort);
+    const idRows = await idQb
+      .offset((q.page - 1) * q.limit)
+      .limit(q.limit)
+      .getRawMany<{ id: string }>();
+
+    const items = await this.loadDtosByIds(idRows.map((r) => r.id));
+    const summary = await this.summarizePlain(q, total);
+    return { items, meta: makeMeta(q.page, q.limit, total), summary };
+  }
+
+  /** Nhánh barem BẬT — nạp cả tập đã lọc, chấm điểm JS, ẩn theo luật cứng, cắt trang. */
+  private async searchScored(
+    q: JobSearchInput,
+    profile: JobMatchProfile,
+  ): Promise<JobSearchResponse> {
+    // getMany() hydrate đúng quan hệ to-many, không nhân dòng như leftJoin thường.
+    const rows = await this.buildFilteredQb(q)
+      .leftJoinAndSelect("j.technologies", "t")
+      .getMany();
+
+    const now = Date.now();
+    const scored: ScoredJob[] = rows
+      .map((r) => toDtoFromEntity(r))
+      .map((job) => ({ job, result: scoreJob(job, profile, now) }))
+      .filter((x) => !x.result.hidden);
+
+    const ordered = sortScored(scored, q.sort);
+    const total = ordered.length;
+    const start = (q.page - 1) * q.limit;
+    const items = ordered.slice(start, start + q.limit).map((x) => x.job);
+
+    return {
+      items,
+      meta: makeMeta(q.page, q.limit, total),
+      summary: summarizeScored(ordered, now),
+    };
+  }
+
+  /** Nạp DTO theo danh sách id, giữ đúng thứ tự đã chọn ở bước phân trang. */
+  private async loadDtosByIds(ids: string[]): Promise<Job[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.repo.find({
+      where: { id: In(ids) },
+      relations: { technologies: true },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return ids
+      .map((id) => byId.get(id))
+      .filter((r): r is JobEntity => r != null)
+      .map((r) => toDtoFromEntity(r));
+  }
+
+  /** Tóm tắt thống kê cho nhánh barem TẮT (tính trên cả tập đã lọc, không 1 trang). */
+  private async summarizePlain(
+    q: JobSearchInput,
+    total: number,
+  ): Promise<JobSearchSummary> {
+    const since7 = new Date(Date.now() - 7 * DAY_MS);
+    const [new7, withSalaryCount] = await Promise.all([
+      this.buildFilteredQb(q)
+        .andWhere("COALESCE(j.postedAt, j.crawlAt) >= :since7", { since7 })
+        .getCount(),
+      this.buildFilteredQb(q)
+        .andWhere("(j.salaryMin IS NOT NULL OR j.salaryMax IS NOT NULL)")
+        .getCount(),
+    ]);
+
+    let medianSalary = 0;
+    if (withSalaryCount > 0) {
+      const mid = Math.floor((withSalaryCount - 1) / 2);
+      const row = await this.buildFilteredQb(q)
+        .andWhere("(j.salaryMin IS NOT NULL OR j.salaryMax IS NOT NULL)")
+        .andWhere("COALESCE(j.salaryMax, j.salaryMin) > 0")
+        .select("COALESCE(j.salaryMax, j.salaryMin)", "rep")
+        .orderBy("rep", "ASC")
+        .offset(mid)
+        .limit(1)
+        .getRawOne<{ rep: string | number }>();
+      medianSalary = row ? Number(row.rep) : 0;
+    }
+
+    return {
+      total,
+      new7,
+      withSalaryCount,
+      medianSalary,
+      matchEnabled: false,
+      matchAvg: 0,
+      matchTop: 0,
+    };
+  }
+
+  /** Đếm số job theo từng giá trị của một cột (bỏ NULL/rỗng); nhiều nhất trước. */
+  private async facetColumn(
+    prop: "level" | "employmentType" | "source" | "location",
+  ): Promise<JobFacetCount[]> {
+    const rows = await this.repo
+      .createQueryBuilder("j")
+      .select(`j.${prop}`, "value")
+      .addSelect("COUNT(*)", "count")
+      .where(`j.${prop} IS NOT NULL AND j.${prop} <> ''`)
+      .groupBy(`j.${prop}`)
+      .orderBy("count", "DESC")
+      .addOrderBy("value", "ASC")
+      .getRawMany<{ value: string; count: string | number }>();
+    return rows.map((r) => ({ value: r.value, count: Number(r.count) }));
+  }
+
   /** Xóa vĩnh viễn một job; bảng nối tự dọn theo FK CASCADE. */
   async remove(id: string): Promise<void> {
     const result = await this.repo.delete({ id });
@@ -232,6 +480,29 @@ function techPairs(job: JobEntity): TechPair[] {
   return [...(job.technologies ?? [])]
     .map((t) => ({ name: t.name, slug: t.slug }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Áp ORDER BY cho nhánh phân trang SQL (barem tắt). Dựa vào hành vi mặc định của
+ * MySQL — `ORDER BY col DESC` đẩy NULL xuống cuối — để job thiếu lương/ngày luôn
+ * nằm dưới, khớp với client (`repSalary` null → -1, `dateValue` null → 0). Thêm
+ * `j.id` làm tie-break để thứ tự ổn định giữa các trang.
+ */
+function applySortPlain(
+  qb: SelectQueryBuilder<JobEntity>,
+  sort: "crawl" | "posted" | "salary",
+): void {
+  if (sort === "posted") {
+    qb.addOrderBy("j.postedAt", "DESC");
+  } else if (sort === "salary") {
+    // Sắp theo lương đại diện qua alias đã SELECT (ORDER BY alias an toàn,
+    // không phụ thuộc cách TypeORM thay tên cột trong biểu thức hàm).
+    qb.addSelect("COALESCE(j.salaryMax, j.salaryMin)", "rep");
+    qb.addOrderBy("rep", "DESC");
+  } else {
+    qb.addOrderBy("j.crawlAt", "DESC");
+  }
+  qb.addOrderBy("j.id", "ASC");
 }
 
 /** Dựng DTO từ entity đã nạp quan hệ `technologies`. */

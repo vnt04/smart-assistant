@@ -31,6 +31,8 @@ import {
   vocabListResponseSchema,
   jobListResponseSchema,
   techFacetListResponseSchema,
+  jobSearchResponseSchema,
+  jobFacetsResponseSchema,
   n8nExecutionListResponseSchema,
   n8nExecutionDetailSchema,
   n8nExecutionStatsSchema,
@@ -107,6 +109,9 @@ import {
   type VocabItem,
   type Job,
   type TechFacet,
+  type JobSearchInput,
+  type JobSearchResponse,
+  type JobFacetsResponse,
   type N8nExecutionListResponse,
   type N8nExecutionDetail,
   type N8nExecutionStats,
@@ -774,6 +779,22 @@ export const api = {
   listTechFacets: async (): Promise<TechFacet[]> =>
     techFacetListResponseSchema.parse(
       await request("/jobs/tech-facets", { auth: false }),
+    ),
+
+  // Tìm/lọc/sắp xếp + phân trang (JobPage). POST vì body chứa barem lồng nhau.
+  searchJobs: async (query: JobSearchInput): Promise<JobSearchResponse> =>
+    jobSearchResponseSchema.parse(
+      await request("/jobs/search", {
+        method: "POST",
+        body: query,
+        auth: false,
+      }),
+    ),
+
+  // Facet đếm global cho rail lọc + editor barem (fetch một lần).
+  listJobFacets: async (): Promise<JobFacetsResponse> =>
+    jobFacetsResponseSchema.parse(
+      await request("/jobs/facets", { auth: false }),
     ),
 
   deleteJob: async (id: string): Promise<void> =>

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { idSchema } from "./common.js";
+import { idSchema, paginationMetaSchema } from "./common.js";
+import { jobMatchProfileSchema } from "./job-match.js";
 
 /** Field length limits — kept in sync with the `jobs` table column widths. */
 export const MAX_JOB_ID_LENGTH = 64;
@@ -169,3 +170,77 @@ export type TechFacet = z.infer<typeof techFacetSchema>;
 /** Response cho GET /jobs/tech-facets — facet nhiều job nhất trước. */
 export const techFacetListResponseSchema = z.array(techFacetSchema);
 export type TechFacetListResponse = z.infer<typeof techFacetListResponseSchema>;
+
+/* -------------------- Tìm kiếm + phân trang phía server -------------------- */
+
+/** Tiêu chí sắp xếp danh sách job. `match` cần barem (chấm điểm phía server). */
+export const jobSortSchema = z.enum(["crawl", "posted", "salary", "match"]);
+export type JobSort = z.infer<typeof jobSortSchema>;
+
+/** Bucket lương — khớp đúng ngưỡng ở rail JobPage (15tr/30tr/50tr). */
+export const jobSalaryBucketSchema = z.enum([
+  "thoa-thuan",
+  "0-15",
+  "15-30",
+  "30-50",
+  "50+",
+]);
+export type JobSalaryBucket = z.infer<typeof jobSalaryBucketSchema>;
+
+/**
+ * Tham số `POST /jobs/search`. Mảng (tech/level/…) = chọn nhiều (OR trong nhóm).
+ * `matchProfile` chỉ gửi khi người dùng bật barem; server dùng để chấm điểm,
+ * sắp xếp `match`, và ẩn job theo luật cứng (hideMissingMustHave/minSalary/minScore).
+ */
+export const jobSearchInputSchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  tech: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+  level: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+  employmentType: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+  source: z.array(z.string().trim().min(1).max(32)).max(50).optional(),
+  location: z.array(z.string().trim().min(1).max(255)).max(50).optional(),
+  salaryBucket: jobSalaryBucketSchema.optional(),
+  postedWithinDays: z.coerce.number().int().min(1).max(3650).optional(),
+  sort: jobSortSchema.default("crawl"),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(24),
+  matchProfile: jobMatchProfileSchema.optional(),
+});
+export type JobSearchInput = z.infer<typeof jobSearchInputSchema>;
+
+/** Tóm tắt thống kê cho StatsBar (tính trên tập ĐÃ LỌC, không phải một trang). */
+export const jobSearchSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  new7: z.number().int().nonnegative(),
+  withSalaryCount: z.number().int().nonnegative(),
+  medianSalary: z.number().int().nonnegative(),
+  matchEnabled: z.boolean(),
+  matchAvg: z.number().int().nonnegative(),
+  matchTop: z.number().int().nonnegative(),
+});
+export type JobSearchSummary = z.infer<typeof jobSearchSummarySchema>;
+
+/** Response `POST /jobs/search`. `items` là một trang; `summary` trên cả tập lọc. */
+export const jobSearchResponseSchema = z.object({
+  items: z.array(jobSchema),
+  meta: paginationMetaSchema,
+  summary: jobSearchSummarySchema,
+});
+export type JobSearchResponse = z.infer<typeof jobSearchResponseSchema>;
+
+/** Một mục facet `{value,count}` cho rail (cấp bậc/hình thức/nguồn/địa điểm). */
+export const jobFacetCountSchema = z.object({
+  value: z.string(),
+  count: z.number().int().nonnegative(),
+});
+export type JobFacetCount = z.infer<typeof jobFacetCountSchema>;
+
+/** Response `GET /jobs/facets` — đếm GLOBAL toàn bảng (không theo bộ lọc đang chọn). */
+export const jobFacetsResponseSchema = z.object({
+  levels: z.array(jobFacetCountSchema),
+  employmentTypes: z.array(jobFacetCountSchema),
+  sources: z.array(jobFacetCountSchema),
+  locations: z.array(jobFacetCountSchema),
+  tech: z.array(techFacetSchema),
+});
+export type JobFacetsResponse = z.infer<typeof jobFacetsResponseSchema>;
