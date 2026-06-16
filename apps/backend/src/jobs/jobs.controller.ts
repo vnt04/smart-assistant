@@ -11,7 +11,13 @@ import {
   Res,
 } from "@nestjs/common";
 import type { Response } from "express";
-import type { IngestJobResponse, Job, TechFacet } from "@assistant/shared";
+import type {
+  IngestJobResponse,
+  Job,
+  JobFacetsResponse,
+  JobSearchResponse,
+  TechFacet,
+} from "@assistant/shared";
 import { JobsService } from "./jobs.service";
 
 /**
@@ -33,6 +39,22 @@ export class JobsController {
   @Get("tech-facets")
   techFacets(): Promise<TechFacet[]> {
     return this.svc.listTechFacets();
+  }
+
+  /** Facet đếm global (cấp bậc/hình thức/nguồn/địa điểm/công nghệ) cho rail lọc. */
+  @Get("facets")
+  facets(): Promise<JobFacetsResponse> {
+    return this.svc.listFacets();
+  }
+
+  /**
+   * Tìm/lọc/sắp xếp + phân trang danh sách job. Dùng POST vì barem
+   * (`matchProfile`) là object lồng nhau, không hợp lý nhét vào query string.
+   * Body được Zod-validate trong service nên dùng `@Body() unknown`.
+   */
+  @Post("search")
+  search(@Body() body: unknown): Promise<JobSearchResponse> {
+    return this.svc.search(body);
   }
 
   @Post()
