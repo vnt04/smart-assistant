@@ -3,7 +3,6 @@ import {
   Router,
   RootRoute,
   Route,
-  redirect,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
@@ -14,6 +13,7 @@ import { AssistantPage } from "./pages/AssistantPage";
 import { ExpensePage } from "./pages/ExpensePage";
 import { JobPage } from "./pages/JobPage";
 import { JobStatsPage } from "./pages/JobStatsPage";
+import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotesPage } from "./pages/NotesPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -23,7 +23,7 @@ import { SharedPage } from "./pages/SharedPage";
 import { VocabPage } from "./pages/VocabPage";
 import { GoogleCallbackPage } from "./pages/GoogleCallbackPage";
 
-const PUBLIC_PATHS = ["/login", "/register", "/auth/callback"];
+const PUBLIC_PATHS = ["/", "/login", "/register", "/auth/callback"];
 
 function RootLayout() {
   const { status } = useAuth();
@@ -36,7 +36,7 @@ function RootLayout() {
 
   useEffect(() => {
     if (status === "loading") return;
-    if (status === "authenticated" && isPublic && !isShare) {
+    if (status === "authenticated" && isPublic && !isShare && pathname !== "/") {
       if (pathname === "/auth/callback") return;
       // Sau khi đăng nhập từ trang share riêng tư, quay lại đúng liên kết đó.
       let redirectTo: string | null = null;
@@ -88,9 +88,7 @@ const rootRoute = new RootRoute({ component: RootLayout });
 const indexRoute = new Route({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: () => {
-    throw redirect({ to: "/notes", replace: true });
-  },
+  component: LandingPage,
 });
 
 const loginRoute = new Route({

@@ -66,3 +66,15 @@ The app uses responsive layouts instead of separate mobile screens. For Notes, t
 ## Frontend validation rule
 
 Frontend should still parse API responses with Zod even though backend validates inputs. The browser receives data from an external boundary, so response parsing catches backend/client contract drift early.
+
+## Public entry point
+
+- `/` renders the public `LandingPage` without API calls or authentication.
+- The landing page introduces Notes & AI Assistant, Job Tracking & Evaluation, and Workflow Automation, with links to `/login` and `/register`.
+- Authenticated users may remain on `/`; protected workspace routes such as `/notes` still require authentication.
+
+## Document History
+
+| Date | Change | Author |
+|------|--------|--------|
+| 2026-10-15 | Add public landing page and root route behavior | Claude Code |
