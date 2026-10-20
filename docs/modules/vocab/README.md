@@ -113,3 +113,4 @@ flowchart LR
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-15 | Initial draft generated from code survey | TODO: confirm |
+| 2026-10-20 | Ẩn Words khỏi sidebar và quick links; giữ nguyên route/API để tương thích | Claude Code |

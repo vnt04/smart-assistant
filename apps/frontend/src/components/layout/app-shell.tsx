@@ -52,7 +52,6 @@ interface NavItem {
 // Các route vẫn còn trong router.tsx — thêm lại vào đây để hiện lại khi cần.
 const NAV_ITEMS: NavItem[] = [
   { to: "/notes", label: "Notes", iconSrc: "/nav-note.png", dot: "yellow" },
-  { to: "/vocab", label: "Words", iconSrc: "/nav-vocab.png", dot: "cyan" },
   {
     to: "/job",
     label: "Jobs",
