@@ -6,6 +6,26 @@ Smart Assistant là một PWA tự host để quản lý kiến thức cá nhân
 - **Job Tracking & Evaluation:** tiếp nhận, chuẩn hóa và đánh giá thông tin việc làm theo hồ sơ phù hợp.
 - **Workflow Automation:** kết nối với n8n để thu thập dữ liệu và theo dõi trạng thái workflow.
 
+## Screenshots
+
+### Notes and AI Assistant
+
+Organize knowledge with notebooks, tags, rich text notes and internal references. These notes can be used as context for the AI assistant.
+
+![Notes editor](./docs/assets/screenshots/notes-editor.png)
+
+### Job Tracking and Evaluation
+
+Search collected jobs, filter by different criteria and prioritize opportunities with a configurable matching profile.
+
+![Job tracking](./docs/assets/screenshots/job-tracking.png)
+
+### Job Statistics
+
+Review aggregated information about collected jobs, salary ranges, technologies, seniority levels and posting trends.
+
+![Job statistics](./docs/assets/screenshots/job-statistics.png)
+
 ## Features
 
 ### Notes & AI Assistant
