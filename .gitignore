@@ -56,6 +56,9 @@ uploads/
 .gitnexus/
 AGENTS.md
 
+# Claude temporary worktrees
+.claude/worktrees/
+
 # Garbage
 *.stackdump
 *.log
