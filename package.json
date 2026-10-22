@@ -20,7 +20,6 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f",
-    "prod:build": "docker compose --env-file .env.production -f docker-compose.prod.yml build",
     "prod:up": "docker compose --env-file .env.production -f docker-compose.prod.yml up -d",
     "prod:down": "docker compose --env-file .env.production -f docker-compose.prod.yml down",
     "prod:logs": "docker compose --env-file .env.production -f docker-compose.prod.yml logs -f",

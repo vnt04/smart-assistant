@@ -12,9 +12,7 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: .
-      dockerfile: apps/backend/Dockerfile
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     restart: unless-stopped
     env_file: ${COMPOSE_ENV_FILE:-.env.production}
     environment:
@@ -42,12 +40,7 @@ services:
       start_period: 30s
 
   frontend:
-    build:
-      context: .
-      dockerfile: apps/frontend/Dockerfile
-      args:
-        VITE_API_BASE_URL: /api
-        VITE_APP_NAME: ${VITE_APP_NAME:-Personal Assistant}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${FRONTEND_HOST_PORT:-8081}:80"
