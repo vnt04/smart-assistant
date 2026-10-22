@@ -1,11 +1,12 @@
 import { ConfigService } from "@nestjs/config";
+import type { Env } from "../../config/env.validation";
 import { CryptoService } from "./crypto.service";
 
 function makeService(): CryptoService {
   const key = "0".repeat(64);
   const config = {
     get: () => key,
-  } as unknown as ConfigService<any, true>;
+  } as unknown as ConfigService<Env, true>;
   return new CryptoService(config);
 }
 
@@ -45,7 +46,7 @@ describe("CryptoService", () => {
   });
 
   it("throws when key is wrong size", () => {
-    const bad = { get: () => "deadbeef" } as unknown as ConfigService<any, true>;
+    const bad = { get: () => "deadbeef" } as unknown as ConfigService<Env, true>;
     expect(() => new CryptoService(bad)).toThrow();
   });
 });

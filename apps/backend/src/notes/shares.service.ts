@@ -409,7 +409,7 @@ export class SharesService {
     return rows
       .filter(
         (row) =>
-          !Boolean(row.isLocked) &&
+          !row.isLocked &&
           (row.notebookId == null || !lockedNb.has(row.notebookId)),
       )
       .map((row) => ({
