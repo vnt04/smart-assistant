@@ -14,7 +14,7 @@
     "dev:backend": "pnpm --filter @assistant/backend dev",
     "dev:frontend": "pnpm --filter @assistant/frontend dev",
     "dev:shared": "pnpm --filter @assistant/shared dev",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @assistant/shared build && pnpm --filter @assistant/backend typecheck && pnpm --filter @assistant/frontend typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "docker:up": "docker compose up -d",
