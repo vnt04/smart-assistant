@@ -1,0 +1,69 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+env:
+  PNPM_VERSION: '9.12.3'
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    name: Deploy ${{ github.event.workflow_run.head_branch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HEALTHCHECK_URL: ${{ secrets.DEPLOY_HEALTHCHECK_URL }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$DEPLOY_HEALTHCHECK_URL"
+          test -n "$REGISTRY_USERNAME"
+          test -n "$REGISTRY_TOKEN"
+          test -n "$IMAGE_PREFIX"
+          test -n "$IMAGE_TAG"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i "$HOME/.ssh/deploy_key" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io --username '$REGISTRY_USERNAME' --password-stdin"
+          ssh -i "$HOME/.ssh/deploy_key" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_HEALTHCHECK_URL='$DEPLOY_HEALTHCHECK_URL' IMAGE_PREFIX='${IMAGE_PREFIX,,}' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+          cd "$DEPLOY_PATH"
+          export BACKEND_IMAGE="$IMAGE_PREFIX/backend:$IMAGE_TAG"
+          export FRONTEND_IMAGE="$IMAGE_PREFIX/frontend:$IMAGE_TAG"
+          docker compose --env-file .env.production -f docker-compose.prod.yml pull backend frontend
+          docker compose --env-file .env.production -f docker-compose.prod.yml up -d backend frontend
+          docker compose --env-file .env.production -f docker-compose.prod.yml exec -T backend node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run
+          curl --fail --silent --show-error --retry 10 --retry-delay 5 "$DEPLOY_HEALTHCHECK_URL"
+          REMOTE_SCRIPT

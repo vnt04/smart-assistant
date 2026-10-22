@@ -58,7 +58,7 @@ function baseSlug(raw: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9+#.\-]/g, "")
+    .replace(/[^a-z0-9+#.-]/g, "")
     .replace(/-+/g, "-")
     .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, MAX_TECH_SLUG_LENGTH);

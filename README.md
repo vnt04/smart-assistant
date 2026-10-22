@@ -1,5 +1,7 @@
 # Smart Assistant
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 Smart Assistant là một PWA tự host để quản lý kiến thức cá nhân, theo dõi cơ hội việc làm và kết nối các workflow tự động. Ứng dụng tập trung vào ba nhóm chức năng:
 
 - **Notes & AI Assistant:** tổ chức ghi chú và dùng dữ liệu ghi chú làm context cho trợ lý AI.
@@ -173,6 +175,13 @@ Schemas in `packages/shared` are used as the contract boundary. The backend vali
 - [Job sync module](./docs/modules/job-sync/README.md) — scheduled job synchronization with BullMQ.
 - [n8n integration](./docs/platforms/n8n/README.md) — workflow execution proxy and configuration.
 - [Full requirements](./docs/SRS.md) — product requirements and planned scope.
+
+## Case Studies
+
+Các case study ghi lại quá trình ra quyết định kỹ thuật, vấn đề gặp phải và bài học rút ra trong quá trình phát triển project:
+
+- [CI/CD với Docker Image và GHCR](./docs/case-studies/ci-cd-ghcr.md)
+  — Chuyển từ việc build Docker image trên VPS sang build một lần trong CI rồi deploy image từ GHCR.
 
 ## Prerequisites
 

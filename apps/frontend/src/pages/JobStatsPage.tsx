@@ -21,7 +21,6 @@ import {
   DEFAULT_JOB_MATCH_PROFILE,
   scoreJob,
   type Job,
-  type JobMatchProfile,
   type JobMatchResult,
   type JobMatchTier,
 } from "@assistant/shared";

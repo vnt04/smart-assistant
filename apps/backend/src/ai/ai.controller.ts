@@ -19,7 +19,6 @@ import {
   sendAiMessageInputSchema,
   type AiConversation,
   type AiConversationDetail,
-  type AiStreamEvent,
   type AiToolCall,
   type ConfirmAiToolCallInput,
   type CreateAiConversationInput,

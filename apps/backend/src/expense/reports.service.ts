@@ -150,7 +150,7 @@ export class ReportsService {
           .join(","),
       );
     }
-    return `﻿${lines.join("\n")}\n`;
+    return `${String.fromCharCode(0xfeff)}${lines.join("\n")}\n`;
   }
 }
 

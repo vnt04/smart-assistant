@@ -224,35 +224,62 @@ systemctl reload nginx
 
 Nên đặt cron trên server chạy lệnh renew hằng ngày hoặc hằng tuần.
 
-### 3.7. Deploy khi có update code mới
+### 3.7. Deploy tự động bằng GitHub Actions
 
-Khi có code mới trên branch production, SSH vào server và pull code mới:
+Workflow nằm ở `.github/workflows/ci.yml` và `.github/workflows/deploy.yml`:
+
+- Pull request tới `develop` hoặc `main`: chạy lint, typecheck, test và build.
+- CI hoàn tất thành công trên `develop`: deploy GitHub Environment `staging`.
+- CI hoàn tất thành công trên `main`: deploy GitHub Environment `production`; nên bật required reviewers.
+
+Tạo các secrets giống nhau trong từng Environment:
+
+- `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`
+- `DEPLOY_PATH`: thư mục chứa compose production trên VPS
+- `DEPLOY_SSH_KEY`: private key của deploy user
+- `DEPLOY_KNOWN_HOSTS`: output host key đã xác minh
+- `DEPLOY_HEALTHCHECK_URL`: ví dụ `https://<APP_DOMAIN>/api/health`
+- `REGISTRY_USERNAME`: tài khoản/token owner có quyền pull GHCR
+- `REGISTRY_TOKEN`: token GHCR chỉ có quyền đọc packages
+
+VPS phải có file `.env.production` phù hợp, Docker Compose plugin và deploy user có quyền Docker. CI build/push images theo commit SHA lên GHCR; workflow deploy chỉ pull đúng images, restart services, chạy migration trong backend container và health check. VPS không cần checkout source hoặc build image.
+
+Production compose nhận hai biến image:
 
 ```bash
-git pull
+export BACKEND_IMAGE=ghcr.io/<owner>/<repo>/backend:<commit-sha>
+export FRONTEND_IMAGE=ghcr.io/<owner>/<repo>/frontend:<commit-sha>
+docker compose --env-file .env.production -f docker-compose.prod.yml pull backend frontend
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d backend frontend
 ```
 
-Build lại image và khởi động lại stack:
+Không commit `.env.production` hoặc private key. Khi workflow thất bại, xem log GitHub Actions và `pnpm prod:logs`; không tự động rollback migration. Rollback cần checkout commit/tag trước đó, đánh giá tính tương thích migration, rồi build/up lại theo runbook thủ công bên dưới.
+
+Nếu update có thay đổi `.env.production.example`, đối chiếu và bổ sung biến mới vào `.env.production` trên server trước khi merge/deploy.
+
+### 3.8. Deploy thủ công / rollback
+
+Nếu cần vận hành thủ công trên server:
 
 ```bash
+git fetch --prune origin main
+git checkout main
+git pull --ff-only origin main
+pnpm prod:build
+pnpm prod:up
+pnpm prod:migrate
+curl https://<APP_DOMAIN>/api/health
+```
+
+Rollback code chỉ nên thực hiện sau khi xác nhận migration tương thích:
+
+```bash
+git checkout <previous-commit-or-tag>
 pnpm prod:build
 pnpm prod:up
 ```
 
-Nếu update có thay đổi database schema, chạy migration sau khi backend đã lên:
-
-```bash
-pnpm prod:migrate
-```
-
-Kiểm tra health và xem logs nếu cần:
-
-```bash
-curl https://<APP_DOMAIN>/api/health
-pnpm prod:logs
-```
-
-Nếu update có thay đổi `.env.production.example`, đối chiếu và bổ sung biến mới vào `.env.production` trên server trước khi chạy `pnpm prod:up`.
+Không chạy `migration:revert` trong production nếu chưa có backup và kế hoạch khôi phục dữ liệu.
 
 ## 4. Backup và restore
 
@@ -303,3 +330,10 @@ pnpm prod:up
 - Tạo transaction/budget expense hoạt động
 - AI Assistant stream được phản hồi nếu provider đã cấu hình
 - Backup tạo được thư mục mới trong `./backups`
+
+## Document History
+
+| Date | Change | Author |
+|------|--------|--------|
+| 2026-10-20 | Add GitHub Actions CI/CD deployment and rollback runbook | Claude Code |
+| 2026-10-21 | Document GHCR image-based deployment and registry secrets | Claude Code |

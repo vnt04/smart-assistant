@@ -69,6 +69,7 @@ flowchart LR
 | BullMQ queues & workers | `apps/backend/src/{schedule,job-sync}` | [`infra/queue-bullmq/README.md`](infra/queue-bullmq/README.md) |
 | Crypto & secret storage | `apps/backend/src/common/crypto` | [`infra/crypto-secrets/README.md`](infra/crypto-secrets/README.md) |
 | Database & migrations | `apps/backend/src/database` | [`infra/database-migrations/README.md`](infra/database-migrations/README.md) |
+| CI/CD | `.github/workflows` | [`infra/ci-cd/README.md`](infra/ci-cd/README.md) · [case study](case-studies/ci-cd-ghcr.md) |
 
 ## Conventions & how to maintain these docs
 
@@ -81,3 +82,5 @@ flowchart LR
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-15 | Create master architecture index linking all modules/platforms/infra | TODO: confirm |
+| 2026-10-20 | Add CI/CD infrastructure documentation link | Claude Code |
+| 2026-10-21 | Add CI/CD GHCR case study link | Claude Code |

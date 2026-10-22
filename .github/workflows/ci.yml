@@ -1,0 +1,107 @@
+# Tên workflow hiển thị trong GitHub Actions.
+name: CI
+
+# Chạy CI khi PR hoặc push vào develop/main.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+# Chỉ cấp quyền đọc repository cho GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Hủy CI cũ cùng ref khi có commit mới.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Cố định phiên bản runtime và package manager cho CI nhất quán.
+env:
+  NODE_VERSION: '20.11.0'
+  PNPM_VERSION: '9.12.3'
+
+jobs:
+  # Job kiểm tra toàn bộ quality gate của monorepo.
+  quality:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # Lấy source code về GitHub Actions runner.
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      # Cài pnpm nhưng chưa tự động install dependency.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4.0.0
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      # Cài Node.js và bật cache pnpm.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # Cài dependency đúng theo lockfile đã commit.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Kiểm tra quy tắc lint của toàn workspace.
+      - name: Lint
+        run: pnpm lint
+
+      # Kiểm tra lỗi TypeScript type.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Chạy test của toàn workspace.
+      - name: Test
+        run: pnpm test
+
+      # Xác nhận toàn bộ workspace build thành công.
+      - name: Build
+        run: pnpm build
+
+  # Build và publish production images sau khi quality gate pass.
+  images:
+    name: Build and push Docker images
+    needs: quality
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # Lấy source code đúng commit cần đóng gói.
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      # Đăng nhập GHCR bằng token ngắn hạn của workflow.
+      - name: Login to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      # Build và push image immutable theo commit SHA.
+      - name: Build and push images
+        env:
+          IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          backend_image="${IMAGE_PREFIX,,}/backend:${IMAGE_TAG}"
+          frontend_image="${IMAGE_PREFIX,,}/frontend:${IMAGE_TAG}"
+          docker build -f apps/backend/Dockerfile -t "$backend_image" .
+          docker build -f apps/frontend/Dockerfile -t "$frontend_image" .
+          docker push "$backend_image"
+          docker push "$frontend_image"
