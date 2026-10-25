@@ -62,6 +62,6 @@ services:
 
 volumes:
   redis_data:
-    name: assistant_prod_redis_data
+    name: ${REDIS_VOLUME_NAME:-assistant_prod_redis_data}
   uploads_data:
-    name: assistant_prod_uploads_data
+    name: ${UPLOADS_VOLUME_NAME:-assistant_prod_uploads_data}
