@@ -61,9 +61,6 @@ export function LoginPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Đăng nhập để tiếp tục với notes, lịch và chi tiêu.
             </p>
-            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Tính năng đang được cập nhật.
-            </p>
           </header>
           <form onSubmit={onSubmit} className="space-y-4" noValidate>
             <div className="space-y-1.5">
@@ -102,23 +99,6 @@ export function LoginPage() {
               {submitting ? "Đang xử lý…" : "Đăng nhập"}
             </Button>
           </form>
-
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-2 text-muted-foreground">hoặc</span>
-            </div>
-          </div>
-
-          <a
-            href="/api/auth/google"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium transition-colors hover:bg-muted"
-          >
-            <GoogleMark />
-            Đăng nhập với Google
-          </a>
         </div>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
@@ -141,16 +121,5 @@ function BackgroundBlob() {
       <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
       <div className="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-[hsl(var(--dot-purple))]/10 blur-3xl" />
     </div>
-  );
-}
-
-function GoogleMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
-      <path
-        fill="#EA4335"
-        d="M12 11v3.6h5.1c-.2 1.3-1.6 3.8-5.1 3.8-3.1 0-5.6-2.5-5.6-5.6S8.9 7.2 12 7.2c1.7 0 2.9.7 3.6 1.4l2.4-2.3C16.5 4.8 14.4 4 12 4 7.6 4 4 7.6 4 12s3.6 8 8 8c4.6 0 7.7-3.2 7.7-7.8 0-.5-.1-.9-.1-1.2H12z"
-      />
-    </svg>
   );
 }
