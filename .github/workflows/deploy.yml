@@ -37,6 +37,7 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository }}
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+          COMPOSE_PROJECT_NAME: ${{ github.event.workflow_run.head_branch == 'main' && 'smart-assistant' || 'smart-assistant-staging' }}
         run: |
           set -Eeuo pipefail
           test -n "$DEPLOY_HOST"
@@ -50,6 +51,7 @@ jobs:
           test -n "$REGISTRY_TOKEN"
           test -n "$IMAGE_PREFIX"
           test -n "$IMAGE_TAG"
+          test -n "$COMPOSE_PROJECT_NAME"
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -57,13 +59,15 @@ jobs:
           printf '%s' "$REGISTRY_TOKEN" | ssh -i "$HOME/.ssh/deploy_key" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "docker login ghcr.io --username '$REGISTRY_USERNAME' --password-stdin"
           ssh -i "$HOME/.ssh/deploy_key" -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_HEALTHCHECK_URL='$DEPLOY_HEALTHCHECK_URL' IMAGE_PREFIX='${IMAGE_PREFIX,,}' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE_SCRIPT'
+            "DEPLOY_PATH='$DEPLOY_PATH' DEPLOY_HEALTHCHECK_URL='$DEPLOY_HEALTHCHECK_URL' COMPOSE_PROJECT_NAME='$COMPOSE_PROJECT_NAME' IMAGE_PREFIX='${IMAGE_PREFIX,,}' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE_SCRIPT'
           set -Eeuo pipefail
           cd "$DEPLOY_PATH"
           export BACKEND_IMAGE="$IMAGE_PREFIX/backend:$IMAGE_TAG"
           export FRONTEND_IMAGE="$IMAGE_PREFIX/frontend:$IMAGE_TAG"
-          docker compose --env-file .env.production -f docker-compose.prod.yml pull backend frontend
-          docker compose --env-file .env.production -f docker-compose.prod.yml up -d backend frontend
-          docker compose --env-file .env.production -f docker-compose.prod.yml exec -T backend node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run
+          test -n "$COMPOSE_PROJECT_NAME"
+          compose=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file .env.production -f docker-compose.prod.yml)
+          "${compose[@]}" pull redis backend frontend
+          "${compose[@]}" up -d --wait --wait-timeout 120 redis backend frontend
+          "${compose[@]}" exec -T backend node ./node_modules/typeorm/cli.js -d dist/database/data-source.js migration:run
           curl --fail --silent --show-error --retry 10 --retry-delay 5 "$DEPLOY_HEALTHCHECK_URL"
           REMOTE_SCRIPT
