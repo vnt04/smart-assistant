@@ -78,3 +78,4 @@ Frontend should still parse API responses with Zod even though backend validates
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-10-15 | Add public landing page and root route behavior | Claude Code |
+| 2026-10-25 | Add update notice to login and registration screens | User |

@@ -137,3 +137,4 @@ Không có luồng queue/worker trong module này. Dọn token hết hạn qua `
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-06-15 | Initial draft generated from code survey | TODO: confirm |
+| 2026-10-25 | Add update notice to frontend auth screens | User |
